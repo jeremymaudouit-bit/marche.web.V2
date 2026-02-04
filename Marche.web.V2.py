@@ -49,16 +49,23 @@ J = {
     "Genou G":13, "Genou D":14,
     "Cheville G":15, "Cheville D":16
 }
-
+# ==============================
+# SEGMENTS CINÉMATIQUES
+# ==============================
 SEGMENTS = [
-    ("Epaule G","Hanche G"), ("Hanche G","Genou G"), ("Genou G","Cheville G"),
-    ("Epaule D","Hanche D"), ("Hanche D","Genou D"), ("Genou D","Cheville D"),
-    ("Hanche G","Hanche D"), ("Epaule G","Epaule D"),
+    ("Epaule G","Hanche G"),
+    ("Hanche G","Genou G"),
+    ("Genou G","Cheville G"),
+
+    ("Epaule D","Hanche D"),
+    ("Hanche D","Genou D"),
+    ("Genou D","Cheville D"),
+
+    ("Hanche G","Hanche D"),
+    ("Epaule G","Epaule D"),
 ]
 
-# ==============================
-# UTILS
-# ==============================
+
 def angle(a,b,c):
     ba, bc = a-b, c-b
     return np.degrees(
@@ -70,25 +77,36 @@ def angle(a,b,c):
         )
     )
 
+
+# ==============================
+# BANDPASS
+# ==============================
 def bandpass(sig, level, fs=FPS):
     low = 0.3 + level*0.02
     high = max(6.0 - level*0.25, low+0.4)
     b,a = butter(2, [low/(fs/2), high/(fs/2)], btype="band")
     return filtfilt(b,a,sig)
 
+# ==============================
+# DRAW SEGMENTS
+# ==============================
 def draw_segments(frame, kp):
     h, w, _ = frame.shape
-    for a,b in SEGMENTS:
+
+    for a, b in SEGMENTS:
         ia, ib = J[a], J[b]
-        xa,ya,ca = kp[ia]
-        xb,yb,cb = kp[ib]
-        if ca>0.3 and cb>0.3:
-            p1 = (int(xa*w), int(ya*h))
-            p2 = (int(xb*w), int(yb*h))
-            cv2.line(frame,p1,p2,(0,255,0),2)
-            cv2.circle(frame,p1,4,(0,255,0),-1)
-            cv2.circle(frame,p2,4,(0,255,0),-1)
+        xa, ya, ca = kp[ia]
+        xb, yb, cb = kp[ib]
+
+        if ca > 0.3 and cb > 0.3:
+            p1 = (int(xa * w), int(ya * h))
+            p2 = (int(xb * w), int(yb * h))
+            cv2.line(frame, p1, p2, (0,255,0), 2)
+            cv2.circle(frame, p1, 4, (0,255,0), -1)
+            cv2.circle(frame, p2, 4, (0,255,0), -1)
+
     return frame
+
 
 # ==============================
 # VIDEO PROCESS
@@ -96,21 +114,23 @@ def draw_segments(frame, kp):
 def process_video(path):
     cap = cv2.VideoCapture(path)
 
-    res = {k:[] for k in [
-        "Hanche G","Hanche D","Genou G","Genou D",
-        "Cheville G","Cheville D"
-    ]}
-    frames = []
+    res = {
+        "Hanche G":[], "Hanche D":[],
+        "Genou G":[], "Genou D":[],
+        "Cheville G":[], "Cheville D":[],
+        "Pelvis":[], "Dos":[]
+    }
+    heel_y_D, frames = [], []
 
     while cap.isOpened():
         ret, frame = cap.read()
-        if not ret:
-            break
-
+        if not ret: break
         kp = detect_pose(frame)
         annotated = draw_segments(frame.copy(), kp)
         frames.append(annotated)
 
+
+        # ANGLES
         res["Hanche G"].append(angle(kp[J["Epaule G"],:2], kp[J["Hanche G"],:2], kp[J["Genou G"],:2]))
         res["Hanche D"].append(angle(kp[J["Epaule D"],:2], kp[J["Hanche D"],:2], kp[J["Genou D"],:2]))
 
@@ -120,18 +140,102 @@ def process_video(path):
         res["Cheville G"].append(angle(kp[J["Genou G"],:2], kp[J["Cheville G"],:2], kp[J["Cheville G"],:2]+[0,1]))
         res["Cheville D"].append(angle(kp[J["Genou D"],:2], kp[J["Cheville D"],:2], kp[J["Cheville D"],:2]+[0,1]))
 
+        pelvis = kp[J["Hanche D"],:2] - kp[J["Hanche G"],:2]
+        res["Pelvis"].append(np.degrees(np.arctan2(pelvis[1], pelvis[0])))
+
+        mid_hip = (kp[11,:2]+kp[12,:2])/2
+        mid_sh = (kp[5,:2]+kp[6,:2])/2
+        res["Dos"].append(angle(mid_sh, mid_hip, mid_hip+[0,-1]))
+
+        heel_y_D.append(kp[J["Cheville D"],1])
+
     cap.release()
-    return res, frames
+    return res, heel_y_D, frames
 
 # ==============================
-# STREAMLIT UI
+# CYCLE DETECTION
+# ==============================
+def detect_cycle(heel_y):
+    inv = -np.array(heel_y)
+    peaks,_ = find_peaks(inv, distance=FPS//2, prominence=np.std(inv)*0.3)
+    if len(peaks)>=2:
+        return peaks[0], peaks[1]
+    return 0, len(heel_y)-1
+
+# ==============================
+# NORMES
+# ==============================
+def norm_curve(joint,n):
+    x = np.linspace(0,100,n)
+    if joint=="Genou":
+        return np.interp(x,[0,15,40,60,80,100],[5,15,5,40,60,5])
+    if joint=="Hanche":
+        return np.interp(x,[0,30,60,100],[30,0,-10,30])
+    if joint=="Cheville":
+        return np.interp(x,[0,10,50,70,100],[0,-5,10,-15,0])
+    return np.zeros(n)
+
+# ==============================
+# PDF EXPORT
+# ==============================
+def export_pdf(patient, keyframe, figures, table_data):
+    path = os.path.join(tempfile.gettempdir(), "rapport_gaitscan.pdf")
+    doc = SimpleDocTemplate(
+        path, pagesize=A4, rightMargin=2*cm,
+        leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("<b>GaitScan Pro – Analyse Cinématique</b>", styles["Title"]))
+    story.append(Spacer(1,0.3*cm))
+    story.append(Paragraph(
+        f"<b>Patient :</b> {patient['nom']} {patient['prenom']}<br/>"
+        f"<b>Date :</b> {datetime.now().strftime('%d/%m/%Y')}<br/>"
+        f"<b>Caméra :</b> {patient.get('camera','N/A')}", styles["Normal"]
+    ))
+    story.append(Paragraph(
+        f"<b>Phase du pas basée sur :</b> {patient.get('phase_cote','N/A')}", styles["Normal"]
+    ))
+    story.append(Spacer(1,0.5*cm))
+
+    story.append(Paragraph("<b>Image représentative du cycle</b>", styles["Heading2"]))
+    story.append(PDFImage(keyframe, width=16*cm, height=8*cm))
+    story.append(Spacer(1,0.6*cm))
+
+    story.append(Paragraph("<b>Analyse articulaire</b>", styles["Heading2"]))
+    story.append(Spacer(1,0.3*cm))
+    for joint, img_path in figures.items():
+        story.append(Paragraph(f"<b>{joint}</b>", styles["Heading3"]))
+        story.append(PDFImage(img_path, width=16*cm, height=6*cm))
+        story.append(Spacer(1,0.4*cm))
+
+    story.append(Spacer(1,0.5*cm))
+    story.append(Paragraph("<b>Synthèse des angles (°) – Gauche / Droite</b>", styles["Heading2"]))
+    table = Table([["Articulation","Min","Moyenne","Max"]]+table_data,
+                  colWidths=[5*cm,3*cm,3*cm,3*cm])
+    table.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),1,colors.black),
+        ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
+        ("ALIGN",(1,1),(-1,-1),"CENTER")
+    ]))
+    story.append(table)
+    doc.build(story)
+    return path
+
+# ==============================
+# STREAMLIT INTERFACE
 # ==============================
 with st.sidebar:
     nom = st.text_input("Nom","DURAND")
     prenom = st.text_input("Prénom","Jean")
-    smooth = st.slider("Lissage",0,10,3)
+    smooth = st.slider("Lissage band-pass",0,10,3)
+    src = st.radio("Source",["Vidéo","Caméra"])
+    camera_pos = st.selectbox("Position de la caméra", ["Devant", "Droite", "Gauche"])
+    phase_cote = st.selectbox("Phase du pas basée sur :", ["Droite", "Gauche", "Les deux"])
 
-video = st.file_uploader("Vidéo",["mp4","avi","mov"])
+video = st.file_uploader("Vidéo",["mp4","avi","mov"]) if src=="Vidéo" else st.camera_input("Caméra")
 
 # ==============================
 # ANALYSE
@@ -141,30 +245,96 @@ if video and st.button("▶ Lancer l'analyse"):
     tmp.write(video.read())
     tmp.close()
 
-    data, frames = process_video(tmp.name)
+    data, heel_y, frames = process_video(tmp.name)
     os.unlink(tmp.name)
 
-    st.subheader("🎥 Vidéo analysée – Segments mesurés")
+    # ==============================
+# VIDEO ANALYSÉE – SEGMENTS
+# ==============================
+st.subheader("🎥 Vidéo analysée – segments mesurés")
 
-    idx = st.slider("Frame",0,len(frames)-1,len(frames)//2)
-    st.image(frames[idx], channels="BGR", use_container_width=True)
+idx = st.slider(
+    "Frame analysée",
+    0, len(frames)-1, len(frames)//2
+)
 
-    st.caption(
-        f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
-        f"Genou D : {data['Genou D'][idx]:.1f}° | "
-        f"Cheville D : {data['Cheville D'][idx]:.1f}°"
-    )
+st.image(
+    frames[idx],
+    channels="BGR",
+    use_container_width=True
+)
 
-    st.subheader("📈 Courbes articulaires")
+st.caption(
+    f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
+    f"Genou D : {data['Genou D'][idx]:.1f}° | "
+    f"Cheville D : {data['Cheville D'][idx]:.1f}°"
+)
+
+
+    # Détecter la phase selon le côté choisi
+    if phase_cote == "Droite":
+        heel_f_ref = bandpass(np.array(data["Cheville D"]), smooth)
+        c0, c1 = detect_cycle(heel_f_ref)
+        phase_colors = [(c0, c1, "blue")]
+    elif phase_cote == "Gauche":
+        heel_f_ref = bandpass(np.array(data["Cheville G"]), smooth)
+        c0, c1 = detect_cycle(heel_f_ref)
+        phase_colors = [(c0, c1, "orange")]
+    else:  # Les deux
+        heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
+        heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
+        c0_D, c1_D = detect_cycle(heel_f_D)
+        c0_G, c1_G = detect_cycle(heel_f_G)
+        phase_colors = [(c0_D, c1_D, "blue"), (c0_G, c1_G, "orange")]
+
+    key_img = os.path.join(tempfile.gettempdir(),"keyframe.png")
+    cv2.imwrite(key_img, frames[len(frames)//2])
+
+    figs, table_data = {}, []
 
     for joint in ["Hanche","Genou","Cheville"]:
+        fig,(ax1,ax2) = plt.subplots(1,2,figsize=(12,4),gridspec_kw={"width_ratios":[2,1]})
         g = bandpass(np.array(data[f"{joint} G"]), smooth)
         d = bandpass(np.array(data[f"{joint} D"]), smooth)
+        n = norm_curve(joint,len(g))
 
-        fig, ax = plt.subplots(figsize=(10,3))
-        ax.plot(g,label="Gauche",color="red")
-        ax.plot(d,label="Droite",color="blue")
-        ax.set_title(joint)
-        ax.legend()
+        ax1.plot(g,label="Gauche",color="red")
+        ax1.plot(d,label="Droite",color="blue")
+        for c0, c1, color in phase_colors:
+            ax1.axvspan(c0, c1, color=color, alpha=0.3)
+        ax1.set_title(f"{joint} – Analyse")
+        ax1.legend()
+
+        ax2.plot(n,color="green")
+        ax2.set_title("Norme")
+
         st.pyplot(fig)
+        img = os.path.join(tempfile.gettempdir(),f"{joint}.png")
+        fig.savefig(img,bbox_inches="tight")
         plt.close(fig)
+        figs[joint]=img
+
+        # Tableau détaillé par côté
+        table_data.append([joint+" Gauche", f"{g.min():.1f}", f"{g.mean():.1f}", f"{g.max():.1f}"])
+        table_data.append([joint+" Droite", f"{d.min():.1f}", f"{d.mean():.1f}", f"{d.max():.1f}"])
+
+    # PDF
+    pdf_path = export_pdf(
+        patient={
+            "nom": nom,
+            "prenom": prenom,
+            "camera": camera_pos,
+            "phase_cote": phase_cote
+        },
+        keyframe=key_img,
+        figures=figs,
+        table_data=table_data
+    )
+
+    with open(pdf_path, "rb") as f:
+        st.download_button(
+            "📄 Télécharger le rapport PDF",
+            f,
+            file_name=f"GaitScan_{nom}_{prenom}.pdf",
+            mime="application/pdf"
+        )
