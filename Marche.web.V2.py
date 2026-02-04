@@ -249,26 +249,26 @@ if video and st.button("▶ Lancer l'analyse"):
     os.unlink(tmp.name)
 
     # ==============================
-# VIDEO ANALYSÉE – SEGMENTS
-# ==============================
-st.subheader("🎥 Vidéo analysée – segments mesurés")
+    # VIDEO ANALYSÉE – SEGMENTS
+    # ==============================
+    st.subheader("🎥 Vidéo analysée – segments mesurés")
 
-idx = st.slider(
-    "Frame analysée",
-    0, len(frames)-1, len(frames)//2
-)
+    idx = st.slider(
+        "Frame analysée",
+        0, len(frames)-1, len(frames)//2
+    )
 
-st.image(
-    frames[idx],
-    channels="BGR",
-    use_container_width=True
-)
+    st.image(
+        frames[idx],
+        channels="BGR",
+        use_container_width=True
+    )
 
-st.caption(
-    f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
-    f"Genou D : {data['Genou D'][idx]:.1f}° | "
-    f"Cheville D : {data['Cheville D'][idx]:.1f}°"
-)
+    st.caption(
+        f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
+        f"Genou D : {data['Genou D'][idx]:.1f}° | "
+        f"Cheville D : {data['Cheville D'][idx]:.1f}°"
+    )
 
 
     # Détecter la phase selon le côté choisi
@@ -338,3 +338,4 @@ st.caption(
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
