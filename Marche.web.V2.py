@@ -347,17 +347,18 @@ for joint in ["Hanche","Genou","Cheville"]:
         table_data.append([joint+" Droite", f"{d.min():.1f}", f"{d.mean():.1f}", f"{d.max():.1f}"])
 
     # PDF
-    pdf_path = export_pdf(
-        patient={
-            "nom": nom,
-            "prenom": prenom,
-            "camera": camera_pos,
-            "phase_cote": phase_cote
-        },
-        keyframe=key_img,
-        figures=figs,
-        table_data=table_data
-    )
+pdf_path = export_pdf(
+    patient={
+        "nom": nom,
+        "prenom": prenom,
+        "camera": camera_pos,
+        "phase_cote": phase_cote
+    },
+    keyframe=key_img,
+    figures=figs,
+    table_data=table_data
+)
+
 
     with open(pdf_path, "rb") as f:
         st.download_button(
@@ -366,6 +367,7 @@ for joint in ["Hanche","Genou","Cheville"]:
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
 
