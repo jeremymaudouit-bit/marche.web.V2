@@ -283,31 +283,27 @@ if frame.ndim != 3 or frame.shape[2] != 3:
 # Conversion RGB (OBLIGATOIRE Cloud)
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-# Récupération de la frame
-frame = frames[idx]
+# Récupération de la frame sélectionnée
+frame = frames[idx] if frames else None
 
-# Vérification frame valide
+# Vérification que la frame est valide
 if frame is None or not isinstance(frame, np.ndarray):
-    st.error(f"❌ Frame invalide à l’index {idx}.")
+    st.error(f"❌ Frame invalide à l’index {idx}. La vidéo ou la caméra n'a pas fourni de frame.")
     st.stop()
 
-# Assurer 3 canaux
-if frame.ndim == 2:  # gris -> convertir en BGR
+# Convertir en 3 canaux si nécessaire
+if frame.ndim == 2:  # image grise
     frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-elif frame.ndim == 3 and frame.shape[2] == 4:  # RGBA -> BGR
+elif frame.ndim == 3 and frame.shape[2] == 4:  # image RGBA
     frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 elif frame.ndim != 3 or frame.shape[2] != 3:
     st.error(f"❌ Frame non compatible : shape={frame.shape}")
     st.stop()
 
-# Conversion BGR -> RGB
+# Conversion BGR -> RGB pour Streamlit
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-# Affichage Streamlit
-st.image(frame_rgb, use_container_width=True)
-
-
-
+# Affichage sécurisé
 st.image(frame_rgb, use_container_width=True)
 
 
@@ -392,6 +388,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
