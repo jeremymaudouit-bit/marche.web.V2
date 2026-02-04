@@ -37,27 +37,31 @@ movenet = load_movenet()
 def detect_pose(frame):
     """
     Retourne kp (17,3) en (x, y, score) normalisé [0..1] SUR L'IMAGE ORIGINALE (corrigé padding).
-    MoveNet renvoie [y, x, score] normalisés sur l'input 192x192 PADDE -> on reprojecte.
     """
     h, w = frame.shape[:2]
 
+    # BGR -> RGB, uint8 [0..255]
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    img_tf = tf.convert_to_tensor(img, dtype=tf.int32)
+    img_tf = tf.convert_to_tensor(img, dtype=tf.uint8)
 
     input_size = 192
+
+    # resize_with_pad -> float32 dans beaucoup de versions TF, donc on cast ensuite
     img_resized = tf.image.resize_with_pad(img_tf[None], input_size, input_size)
+    img_resized = tf.cast(img_resized, tf.int32)  # ✅ IMPORTANT pour MoveNet Hub
 
-    out = movenet.signatures["serving_default"](img_resized)
-    kp = out["output_0"].numpy()[0, 0]  # (17,3) [y,x,score] sur 192 paddé
+    # Appel MoveNet
+    outputs = movenet.signatures["serving_default"](img_resized)
+    kp = outputs["output_0"].numpy()[0, 0]  # (17,3) [y, x, score] sur 192 paddé
 
-    # Géométrie de resize_with_pad
+    # Géométrie resize_with_pad
     scale = min(input_size / w, input_size / h)
     new_w = w * scale
     new_h = h * scale
     pad_x = (input_size - new_w) / 2.0
     pad_y = (input_size - new_h) / 2.0
 
-    # kp en pixels 192
+    # coords en pixels 192
     y_192 = kp[:, 0] * input_size
     x_192 = kp[:, 1] * input_size
     score = kp[:, 2]
@@ -65,11 +69,14 @@ def detect_pose(frame):
     # Dépad + renormalisation sur image originale
     x = (x_192 - pad_x) / (new_w + 1e-6)
     y = (y_192 - pad_y) / (new_h + 1e-6)
+
     x = np.clip(x, 0.0, 1.0)
     y = np.clip(y, 0.0, 1.0)
 
+    # On renvoie (x,y,score) pour rester cohérent avec ton code
     kp_xy = np.stack([x, y, score], axis=1)
     return kp_xy
+
 
 # ==============================
 # JOINTS
@@ -428,3 +435,4 @@ if video and st.button("▶ Lancer l'analyse"):
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
