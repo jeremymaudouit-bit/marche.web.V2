@@ -57,6 +57,22 @@ def norm_curve(joint, n):
         return np.interp(x, [0,10,50,70,100], [5,10,25,10,5])
     return np.zeros(n)
 
+def smooth_ma(y, win=7):
+    """
+    Lissage simple de la norme (moyenne glissante).
+    win impair recommandé. Si win <=1 : renvoie y.
+    """
+    y = np.asarray(y, dtype=float)
+    if win is None or win <= 1:
+        return y
+    win = int(win)
+    if win % 2 == 0:
+        win += 1
+    pad = win // 2
+    ypad = np.pad(y, (pad, pad), mode="edge")
+    kernel = np.ones(win, dtype=float) / win
+    return np.convolve(ypad, kernel, mode="valid")
+
 # ==============================
 # POSE DETECTION
 # ==============================
@@ -244,10 +260,7 @@ def nan_interp(x):
     return None
 
 def asym_percent(left, right):
-    """
-    Asymétrie (%) = 100 * |R - L| / ((R + L)/2)
-    Retourne None si impossible.
-    """
+    # Asymétrie (%) = 100 * |R - L| / ((R + L)/2)
     if left is None or right is None:
         return None
     denom = (left + right) / 2.0
@@ -257,12 +270,9 @@ def asym_percent(left, right):
 
 def compute_step_length_cm(heelG, heelD, taille_cm):
     """
-    Estime une longueur de pas en cm à partir des signaux y (talons) + taille.
+    Estime une longueur de pas (cm) à partir des signaux talons + taille.
     Renvoie:
-      - step_mean_cm, step_std_cm
-      - step_G_cm (pas "côté gauche"), step_D_cm (pas "côté droit")
-      - step_asym_pct
-    Note: estimation monocaméra 2D sans calibration.
+      step_mean_cm, step_std_cm, stepG_cm, stepD_cm, step_asym_pct
     """
     hG = nan_interp(heelG)
     hD = nan_interp(heelD)
@@ -272,14 +282,11 @@ def compute_step_length_cm(heelG, heelD, taille_cm):
     cG = detect_cycle(hG)
     cD = detect_cycle(hD)
 
-    # On fabrique deux estimations simples (une depuis cycle G, une depuis cycle D)
-    # On utilise une différence de y talon entre événements (approx)
     stepG_norm = None
     stepD_norm = None
 
     if cG:
         i0, i1 = cG
-        # “pas G” approximé : variation relative entre talon G (événement) et talon D (réf)
         stepG_norm = abs(hG[i1] - hD[i0])
 
     if cD:
@@ -290,16 +297,14 @@ def compute_step_length_cm(heelG, heelD, taille_cm):
     if not steps_norm:
         return None, None, None, None, None
 
-    # Conversion en cm via facteur stature (approx)
-    # 0.53 = ordre de grandeur talon->tête / stature (approx adulte)
-    scale = taille_cm / 0.53
+    scale = float(taille_cm) / 0.53  # approx monocaméra 2D
 
     stepG_cm = stepG_norm * scale if stepG_norm is not None else None
     stepD_cm = stepD_norm * scale if stepD_norm is not None else None
 
-    step_mean_cm = float(np.mean([v for v in [stepG_cm, stepD_cm] if v is not None]))
-    step_std_cm = float(np.std([v for v in [stepG_cm, stepD_cm] if v is not None]))
-
+    valid = [v for v in [stepG_cm, stepD_cm] if v is not None]
+    step_mean_cm = float(np.mean(valid))
+    step_std_cm = float(np.std(valid))
     step_asym = asym_percent(stepG_cm, stepD_cm)
 
     return step_mean_cm, step_std_cm, stepG_cm, stepD_cm, step_asym
@@ -327,25 +332,26 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, st
         f"<b>Date :</b> {datetime.now().strftime('%d/%m/%Y')}<br/>"
         f"<b>Angle de film :</b> {patient.get('camera','N/A')}<br/>"
         f"<b>Affichage phases :</b> {patient.get('phase','N/A')}<br/>"
+        f"<b>Norme affichée :</b> {'Oui' if patient.get('show_norm', True) else 'Non'}<br/>"
         f"<b>Taille :</b> {patient.get('taille_cm','N/A')} cm",
         styles["Normal"]
     ))
     story.append(Spacer(1, 0.35*cm))
 
-    # --- Step length block
     if step_info is not None:
         story.append(Paragraph("<b>Paramètres spatio-temporels (estimation)</b>", styles["Heading2"]))
         story.append(Paragraph(
             f"<b>Longueur de pas moyenne :</b> {step_info['mean']:.1f} cm<br/>"
             f"<b>Variabilité :</b> ± {step_info['std']:.1f} cm<br/>"
-            + (f"<b>Pas G :</b> {step_info['G']:.1f} cm &nbsp;&nbsp; <b>Pas D :</b> {step_info['D']:.1f} cm<br/>" if step_info.get("G") is not None and step_info.get("D") is not None else "")
-            + (f"<b>Asymétrie pas (G/D) :</b> {step_info['asym']:.1f} %<br/>" if step_info.get("asym") is not None else "")
+            + (f"<b>Pas G :</b> {step_info['G']:.1f} cm &nbsp;&nbsp; <b>Pas D :</b> {step_info['D']:.1f} cm<br/>"
+               if step_info.get("G") is not None and step_info.get("D") is not None else "")
+            + (f"<b>Asymétrie pas (G/D) :</b> {step_info['asym']:.1f} %<br/>"
+               if step_info.get("asym") is not None else "")
             + "<i>Mesure monocaméra 2D sans calibration métrique : valeurs estimées.</i>",
             styles["Normal"]
         ))
         story.append(Spacer(1, 0.25*cm))
 
-    # --- Asymmetry block (angles)
     if asym_table:
         story.append(Paragraph("<b>Asymétries droite/gauche (angles)</b>", styles["Heading2"]))
         t = Table([["Mesure", "Moy G", "Moy D", "Asym %"]] + asym_table,
@@ -423,11 +429,14 @@ with st.sidebar:
     prenom = st.text_input("Prénom","Jean")
     camera_pos = st.selectbox("Angle de film", ["Devant","Droite","Gauche"])
     phase_cote = st.selectbox("Phases", ["Aucune","Droite","Gauche","Les deux"])
-    smooth = st.slider("Lissage", 0, 10, 3)
+    smooth = st.slider("Lissage (patient)", 0, 10, 3)
     conf = st.slider("Seuil confiance", 0.1, 0.9, 0.3, 0.05)
 
-    # ✅ AJOUT : taille patient
+    # ✅ Ajouts demandés
     taille_cm = st.number_input("Taille du patient (cm)", min_value=80, max_value=230, value=170, step=1)
+
+    show_norm = st.checkbox("Afficher la norme", value=True)
+    norm_smooth_win = st.slider("Lissage norme (simple)", 1, 21, 7, 2, help="Moyenne glissante (impair conseillé). 1 = pas de lissage.")
 
 video = st.file_uploader("Vidéo", ["mp4","avi","mov"])
 
@@ -482,7 +491,7 @@ if video and st.button("▶ Lancer l'analyse"):
         g_raw = np.array(data[f"{joint} G"], dtype=float)
         d_raw = np.array(data[f"{joint} D"], dtype=float)
 
-        # filtrage (NaN->0 pour filtrer, mais stats sur frames valides)
+        # filtrage (NaN->0 pour filtrer, stats sur indices valides)
         g = bandpass(np.nan_to_num(g_raw, nan=0.0), smooth)
         d = bandpass(np.nan_to_num(d_raw, nan=0.0), smooth)
 
@@ -493,8 +502,14 @@ if video and st.button("▶ Lancer l'analyse"):
         ax1.set_title(f"{joint} – Analyse")
         ax1.legend()
 
-        ax2.plot(norm_curve(joint, len(g)), color="green")
-        ax2.set_title("Norme")
+        # Norme (optionnelle + lissée simplement)
+        if show_norm:
+            norm = norm_curve(joint, len(g))
+            norm = smooth_ma(norm, win=norm_smooth_win)
+            ax2.plot(norm, color="green")
+            ax2.set_title("Norme (lissée)" if norm_smooth_win and norm_smooth_win > 1 else "Norme")
+        else:
+            ax2.axis("off")
 
         st.pyplot(fig)
 
@@ -517,10 +532,10 @@ if video and st.button("▶ Lancer l'analyse"):
         table_data.append([f"{joint} Gauche", f"{gmin:.1f}", f"{gmean:.1f}", f"{gmax:.1f}"])
         table_data.append([f"{joint} Droite", f"{dmin:.1f}", f"{dmean:.1f}", f"{dmax:.1f}"])
 
-        # asymétrie (%) sur moyennes
         a = asym_percent(gmean_only, dmean_only)
         if a is None:
-            asym_rows.append([joint, f"{gmean_only:.1f}" if gmean_only is not None else "NA",
+            asym_rows.append([joint,
+                              f"{gmean_only:.1f}" if gmean_only is not None else "NA",
                               f"{dmean_only:.1f}" if dmean_only is not None else "NA",
                               "NA"])
         else:
@@ -556,16 +571,17 @@ if video and st.button("▶ Lancer l'analyse"):
     # ==============================
     step_info = None
     if step_mean is not None:
-        step_info = {
-            "mean": step_mean,
-            "std": step_std,
-            "G": stepG_cm,
-            "D": stepD_cm,
-            "asym": step_asym
-        }
+        step_info = {"mean": step_mean, "std": step_std, "G": stepG_cm, "D": stepD_cm, "asym": step_asym}
 
     pdf_path = export_pdf(
-        patient={"nom": nom, "prenom": prenom, "camera": camera_pos, "phase": phase_cote, "taille_cm": int(taille_cm)},
+        patient={
+            "nom": nom,
+            "prenom": prenom,
+            "camera": camera_pos,
+            "phase": phase_cote,
+            "taille_cm": int(taille_cm),
+            "show_norm": bool(show_norm)
+        },
         keyframe_path=keyframe_path,
         figures=figures,
         table_data=table_data,
@@ -584,5 +600,3 @@ if video and st.button("▶ Lancer l'analyse"):
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
     )
-
-
