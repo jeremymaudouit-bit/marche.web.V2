@@ -251,6 +251,46 @@ if video and st.button("▶ Lancer l'analyse"):
     # ==============================
     # VIDEO ANALYSÉE – SEGMENTS
     # ==============================
+
+def process_video(path):
+    cap = cv2.VideoCapture(path)
+    res = {
+        "Hanche G":[], "Hanche D":[],
+        "Genou G":[], "Genou D":[],
+        "Cheville G":[], "Cheville D":[],
+        "Pelvis":[], "Dos":[]
+    }
+    heel_y_D, frames = [], []
+
+    # Vérifier si la vidéo est ouverte
+    if not cap.isOpened():
+        st.error(f"❌ Impossible d’ouvrir la vidéo : {path}")
+        return res, heel_y_D, frames
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame.copy())
+
+        # Pose / angles
+        kp = detect_pose(frame)
+        res["Hanche G"].append(angle(kp[J["Epaule G"],:2], kp[J["Hanche G"],:2], kp[J["Genou G"],:2]))
+        res["Hanche D"].append(angle(kp[J["Epaule D"],:2], kp[J["Hanche D"],:2], kp[J["Genou D"],:2]))
+        res["Genou G"].append(angle(kp[J["Hanche G"],:2], kp[J["Genou G"],:2], kp[J["Cheville G"],:2]))
+        res["Genou D"].append(angle(kp[J["Hanche D"],:2], kp[J["Genou D"],:2], kp[J["Cheville D"],:2]))
+        res["Cheville G"].append(angle(kp[J["Genou G"],:2], kp[J["Cheville G"],:2], kp[J["Cheville G"],:2]+[0,1]))
+        res["Cheville D"].append(angle(kp[J["Genou D"],:2], kp[J["Cheville D"],:2], kp[J["Cheville D"],:2]+[0,1]))
+        pelvis = kp[J["Hanche D"],:2] - kp[J["Hanche G"],:2]
+        res["Pelvis"].append(np.degrees(np.arctan2(pelvis[1], pelvis[0])))
+        mid_hip = (kp[11,:2]+kp[12,:2])/2
+        mid_sh = (kp[5,:2]+kp[6,:2])/2
+        res["Dos"].append(angle(mid_sh, mid_hip, mid_hip+[0,-1]))
+        heel_y_D.append(kp[J["Cheville D"],1])
+
+    cap.release()
+    return res, heel_y_D, frames
+
    # ==============================
 # VIDEO ANALYSÉE – SEGMENTS (SAFE)
 # ==============================
@@ -406,6 +446,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
