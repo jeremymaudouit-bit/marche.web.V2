@@ -49,34 +49,30 @@ J = {
     "Genou G":13, "Genou D":14,
     "Cheville G":15, "Cheville D":16
 }
-# ==============================
-# SEGMENTS CINÉMATIQUES
-# ==============================
-SEGMENTS = [
-    ("Epaule G","Hanche G"),
-    ("Hanche G","Genou G"),
-    ("Genou G","Cheville G"),
 
-    ("Epaule D","Hanche D"),
-    ("Hanche D","Genou D"),
-    ("Genou D","Cheville D"),
+def angle(a,b,c,joint_type="Hanche/Cheville"):
+    ba = a - b
+    bc = c - b
+    ba[1] *= -1
+    bc[1] *= -1
+    cos_theta = np.dot(ba, bc) / (np.linalg.norm(ba)*np.linalg.norm(bc)+1e-6)
+    ang = np.clip(np.degrees(np.arccos(cos_theta)), 0, 180)
 
-    ("Hanche G","Hanche D"),
-    ("Epaule G","Epaule D"),
-]
+    if joint_type == "Hanche":
+        return 180 - ang
+    elif joint_type == "Cheville":
+        return 90 - (ang - 90)
+    else:
+        return ang
 
-
-def angle(a,b,c):
-    ba, bc = a-b, c-b
-    return np.degrees(
-        np.arccos(
-            np.clip(
-                np.dot(ba,bc)/(np.linalg.norm(ba)*np.linalg.norm(bc)+1e-6),
-                -1,1
-            )
-        )
-    )
-
+def angle_genou(a,b,c):
+    ba = a - b
+    bc = c - b
+    ba[1] *= -1
+    bc[1] *= -1
+    cos_theta = np.dot(ba, bc) / (np.linalg.norm(ba)*np.linalg.norm(bc)+1e-6)
+    ang = np.clip(np.degrees(np.arccos(cos_theta)), 0, 180)
+    return 180 - ang
 
 # ==============================
 # BANDPASS
@@ -86,27 +82,6 @@ def bandpass(sig, level, fs=FPS):
     high = max(6.0 - level*0.25, low+0.4)
     b,a = butter(2, [low/(fs/2), high/(fs/2)], btype="band")
     return filtfilt(b,a,sig)
-
-# ==============================
-# DRAW SEGMENTS
-# ==============================
-def draw_segments(frame, kp):
-    h, w, _ = frame.shape
-
-    for a, b in SEGMENTS:
-        ia, ib = J[a], J[b]
-        xa, ya, ca = kp[ia]
-        xb, yb, cb = kp[ib]
-
-        if ca > 0.3 and cb > 0.3:
-            p1 = (int(xa * w), int(ya * h))
-            p2 = (int(xb * w), int(yb * h))
-            cv2.line(frame, p1, p2, (0,255,0), 2)
-            cv2.circle(frame, p1, 4, (0,255,0), -1)
-            cv2.circle(frame, p2, 4, (0,255,0), -1)
-
-    return frame
-
 
 # ==============================
 # VIDEO PROCESS
@@ -126,19 +101,16 @@ def process_video(path):
         ret, frame = cap.read()
         if not ret: break
         kp = detect_pose(frame)
-        annotated = draw_segments(frame.copy(), kp)
-        frames.append(annotated)
+        frames.append(frame.copy())
 
+        res["Hanche G"].append(angle(kp[J["Epaule G"],:2], kp[J["Hanche G"],:2], kp[J["Genou G"],:2],"Hanche"))
+        res["Hanche D"].append(angle(kp[J["Epaule D"],:2], kp[J["Hanche D"],:2], kp[J["Genou D"],:2],"Hanche"))
 
-        # ANGLES
-        res["Hanche G"].append(angle(kp[J["Epaule G"],:2], kp[J["Hanche G"],:2], kp[J["Genou G"],:2]))
-        res["Hanche D"].append(angle(kp[J["Epaule D"],:2], kp[J["Hanche D"],:2], kp[J["Genou D"],:2]))
+        res["Genou G"].append(angle_genou(kp[J["Hanche G"],:2], kp[J["Genou G"],:2], kp[J["Cheville G"],:2]))
+        res["Genou D"].append(angle_genou(kp[J["Hanche D"],:2], kp[J["Genou D"],:2], kp[J["Cheville D"],:2]))
 
-        res["Genou G"].append(angle(kp[J["Hanche G"],:2], kp[J["Genou G"],:2], kp[J["Cheville G"],:2]))
-        res["Genou D"].append(angle(kp[J["Hanche D"],:2], kp[J["Genou D"],:2], kp[J["Cheville D"],:2]))
-
-        res["Cheville G"].append(angle(kp[J["Genou G"],:2], kp[J["Cheville G"],:2], kp[J["Cheville G"],:2]+[0,1]))
-        res["Cheville D"].append(angle(kp[J["Genou D"],:2], kp[J["Cheville D"],:2], kp[J["Cheville D"],:2]+[0,1]))
+        res["Cheville G"].append(angle(kp[J["Genou G"],:2], kp[J["Cheville G"],:2], kp[J["Cheville G"],:2]+[0,1],"Cheville"))
+        res["Cheville D"].append(angle(kp[J["Genou D"],:2], kp[J["Cheville D"],:2], kp[J["Cheville D"],:2]+[0,1],"Cheville"))
 
         pelvis = kp[J["Hanche D"],:2] - kp[J["Hanche G"],:2]
         res["Pelvis"].append(np.degrees(np.arctan2(pelvis[1], pelvis[0])))
@@ -176,9 +148,45 @@ def norm_curve(joint,n):
     return np.zeros(n)
 
 # ==============================
+# PHOTO ANNOTATION
+# ==============================
+def angle_for_annotation(a,b,c):
+    ba = a - b
+    bc = c - b
+    cos_theta = np.dot(ba, bc) / (np.linalg.norm(ba)*np.linalg.norm(bc)+1e-6)
+    return int(np.clip(np.degrees(np.arccos(cos_theta)), 0, 180))
+
+def annotate_frame(frame, kp):
+    joints = {
+        "Hanche G": (5, 11, 13),
+        "Hanche D": (6, 12, 14),
+        "Genou G": (11, 13, 15),
+        "Genou D": (12, 14, 16),
+        "Cheville G": (13, 15, 15),
+        "Cheville D": (14, 16, 16)
+    }
+    annotated = frame.copy()
+    h, w = frame.shape[:2]
+
+    for name, (a_idx,b_idx,c_idx) in joints.items():
+        a,b,c = kp[a_idx,:2], kp[b_idx,:2], kp[c_idx,:2]
+        ang = angle_for_annotation(a,b,c)
+
+        a_px = (int(a[0]*w), int(a[1]*h))
+        b_px = (int(b[0]*w), int(b[1]*h))
+        c_px = (int(c[0]*w), int(c[1]*h))
+
+        cv2.line(annotated, a_px, b_px, (0,255,0), 2)
+        cv2.line(annotated, c_px, b_px, (0,255,0), 2)
+        cv2.circle(annotated, b_px, 5, (0,0,255), -1)
+        cv2.putText(annotated, f"{ang}°", (b_px[0]+5, b_px[1]-5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
+    return annotated
+
+# ==============================
 # PDF EXPORT
 # ==============================
-def export_pdf(patient, keyframe, figures, table_data):
+def export_pdf(patient, keyframe, figures, table_data, annotated_images=None):
     path = os.path.join(tempfile.gettempdir(), "rapport_gaitscan.pdf")
     doc = SimpleDocTemplate(
         path, pagesize=A4, rightMargin=2*cm,
@@ -221,6 +229,14 @@ def export_pdf(patient, keyframe, figures, table_data):
         ("ALIGN",(1,1),(-1,-1),"CENTER")
     ]))
     story.append(table)
+
+    if annotated_images:
+        story.append(Spacer(1,0.5*cm))
+        story.append(Paragraph("<b>Photos annotées avec angles</b>", styles["Heading2"]))
+        for img_path in annotated_images:
+            story.append(PDFImage(img_path, width=16*cm, height=8*cm))
+            story.append(Spacer(1,0.3*cm))
+
     doc.build(story)
     return path
 
@@ -240,6 +256,8 @@ video = st.file_uploader("Vidéo",["mp4","avi","mov"]) if src=="Vidéo" else st.
 # ==============================
 # ANALYSE
 # ==============================
+annotated_images = []
+
 if video and st.button("▶ Lancer l'analyse"):
     tmp = tempfile.NamedTemporaryFile(delete=False)
     tmp.write(video.read())
@@ -248,158 +266,28 @@ if video and st.button("▶ Lancer l'analyse"):
     data, heel_y, frames = process_video(tmp.name)
     os.unlink(tmp.name)
 
-    # ==============================
-    # VIDEO ANALYSÉE – SEGMENTS
-    # ==============================
+    # Phase du pas
+    if phase_cote == "Droite":
+        heel_f_ref = bandpass(np.array(data["Cheville D"]), smooth)
+        c0, c1 = detect_cycle(heel_f_ref)
+        phase_colors = [(c0, c1, "blue")]
+    elif phase_cote == "Gauche":
+        heel_f_ref = bandpass(np.array(data["Cheville G"]), smooth)
+        c0, c1 = detect_cycle(heel_f_ref)
+        phase_colors = [(c0, c1, "orange")]
+    else:
+        heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
+        heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
+        c0_D, c1_D = detect_cycle(heel_f_D)
+        c0_G, c1_G = detect_cycle(heel_f_G)
+        phase_colors = [(c0_D, c1_D, "blue"), (c0_G, c1_G, "orange")]
 
-def process_video(path):
-    cap = cv2.VideoCapture(path)
-    res = {
-        "Hanche G":[], "Hanche D":[],
-        "Genou G":[], "Genou D":[],
-        "Cheville G":[], "Cheville D":[],
-        "Pelvis":[], "Dos":[]
-    }
-    heel_y_D, frames = [], []
+    key_img = os.path.join(tempfile.gettempdir(),"keyframe.png")
+    cv2.imwrite(key_img, frames[len(frames)//2])
 
-    # Vérifier si la vidéo est ouverte
-    if not cap.isOpened():
-        st.error(f"❌ Impossible d’ouvrir la vidéo : {path}")
-        return res, heel_y_D, frames
+    figs, table_data = {}, []
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame.copy())
-
-        # Pose / angles
-        kp = detect_pose(frame)
-        res["Hanche G"].append(angle(kp[J["Epaule G"],:2], kp[J["Hanche G"],:2], kp[J["Genou G"],:2]))
-        res["Hanche D"].append(angle(kp[J["Epaule D"],:2], kp[J["Hanche D"],:2], kp[J["Genou D"],:2]))
-        res["Genou G"].append(angle(kp[J["Hanche G"],:2], kp[J["Genou G"],:2], kp[J["Cheville G"],:2]))
-        res["Genou D"].append(angle(kp[J["Hanche D"],:2], kp[J["Genou D"],:2], kp[J["Cheville D"],:2]))
-        res["Cheville G"].append(angle(kp[J["Genou G"],:2], kp[J["Cheville G"],:2], kp[J["Cheville G"],:2]+[0,1]))
-        res["Cheville D"].append(angle(kp[J["Genou D"],:2], kp[J["Cheville D"],:2], kp[J["Cheville D"],:2]+[0,1]))
-        pelvis = kp[J["Hanche D"],:2] - kp[J["Hanche G"],:2]
-        res["Pelvis"].append(np.degrees(np.arctan2(pelvis[1], pelvis[0])))
-        mid_hip = (kp[11,:2]+kp[12,:2])/2
-        mid_sh = (kp[5,:2]+kp[6,:2])/2
-        res["Dos"].append(angle(mid_sh, mid_hip, mid_hip+[0,-1]))
-        heel_y_D.append(kp[J["Cheville D"],1])
-
-    cap.release()
-    return res, heel_y_D, frames
-
-   # ==============================
-# VIDEO ANALYSÉE – SEGMENTS (SAFE)
-# ==============================
-st.subheader("🎥 Vidéo analysée – segments mesurés")
-
-# Sécurité absolue
-if not isinstance(frames, list) or len(frames) == 0:
-    st.error("❌ Aucune frame exploitable. Vidéo non lisible sur Streamlit Cloud.")
-    st.stop()
-
-idx = st.slider(
-    "Frame analysée",
-    min_value=0,
-    max_value=len(frames)-1,
-    value=len(frames)//2,
-    step=1
-)
-
-
-data, heel_y, frames = process_video(video_path)
-os.unlink(video_path)
-
-# ===============================
-# Récupération du fichier vidéo / caméra
-# ===============================
-if src == "Caméra":
-    if video is None:
-        st.stop()
-    # Camera input renvoie une image PNG (ou mp4 selon config)
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-    tmp.write(video.getbuffer())
-    tmp.close()
-    video_path = tmp.name
-else:  # Vidéo uploadée
-    if video is None:
-        st.stop()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    tmp.write(video.read())
-    tmp.close()
-    video_path = tmp.name
-
-# ===============================
-# Lecture sécurisée des frames
-# ===============================
-data, heel_y, frames = process_video(video_path)
-os.unlink(video_path)  # Supprimer le temporaire
-
-# Vérifier que frames contient bien des images
-if not frames or len(frames) == 0:
-    st.error("❌ Impossible de lire la vidéo ou le flux caméra.")
-    st.stop()
-
-
-frame = frames[0]  # première frame
-
-# Assurer tableau numpy valide
-if frame is None or not isinstance(frame, np.ndarray):
-    st.error("❌ Frame invalide ou corrompue.")
-    st.stop()
-
-# Convertir en 3 canaux si nécessaire
-if frame.ndim == 2:
-    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-elif frame.ndim == 3 and frame.shape[2] == 4:
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-elif frame.ndim != 3 or frame.shape[2] != 3:
-    st.error(f"❌ Frame non compatible : shape={frame.shape}")
-    st.stop()
-
-frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-st.image(frame_rgb, use_container_width=True)
-
-
-
-st.caption(
-        f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
-        f"Genou D : {data['Genou D'][idx]:.1f}° | "
-        f"Cheville D : {data['Cheville D'][idx]:.1f}°"
-    )
-
-
-# ==============================
-# DÉTECTION PHASE ET KEYFRAME
-# ==============================
-if phase_cote == "Droite":
-    heel_f_ref = bandpass(np.array(data["Cheville D"]), smooth)
-    c0, c1 = detect_cycle(heel_f_ref)
-    phase_colors = [(c0, c1, "blue")]
-
-elif phase_cote == "Gauche":
-    heel_f_ref = bandpass(np.array(data["Cheville G"]), smooth)
-    c0, c1 = detect_cycle(heel_f_ref)
-    phase_colors = [(c0, c1, "orange")]
-
-else:  # Les deux
-    heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
-    heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
-    c0_D, c1_D = detect_cycle(heel_f_D)
-    c0_G, c1_G = detect_cycle(heel_f_G)
-    phase_colors = [(c0_D, c1_D, "blue"), (c0_G, c1_G, "orange")]
-
-# Création de la keyframe
-key_img = os.path.join(tempfile.gettempdir(), "keyframe.png")
-cv2.imwrite(key_img, frames[len(frames)//2])
-
-
-figs, table_data = {}, []
-
-for joint in ["Hanche","Genou","Cheville"]:
+    for joint in ["Hanche","Genou","Cheville"]:
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(12,4),gridspec_kw={"width_ratios":[2,1]})
         g = bandpass(np.array(data[f"{joint} G"]), smooth)
         d = bandpass(np.array(data[f"{joint} D"]), smooth)
@@ -421,49 +309,45 @@ for joint in ["Hanche","Genou","Cheville"]:
         plt.close(fig)
         figs[joint]=img
 
-        # Tableau détaillé par côté
         table_data.append([joint+" Gauche", f"{g.min():.1f}", f"{g.mean():.1f}", f"{g.max():.1f}"])
         table_data.append([joint+" Droite", f"{d.min():.1f}", f"{d.mean():.1f}", f"{d.max():.1f}"])
 
+    # ==============================
+    # CAPTURER QUELQUES PHOTOS AVEC ANGLES
+    # ==============================
+    num_photos = st.slider("Nombre de photos à capturer depuis la vidéo", 1, 10, 3)
+    total_frames = len(frames)
+    frames_to_capture = np.linspace(0, total_frames-1, num_photos, dtype=int)
+
+    for i, f_idx in enumerate(frames_to_capture):
+        frame = frames[f_idx]
+        kp = detect_pose(frame)
+        annotated = annotate_frame(frame, kp)
+        path = os.path.join(tempfile.gettempdir(), f"annotated_{i}.png")
+        cv2.imwrite(path, annotated)
+        annotated_images.append(path)
+        st.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), caption=f"Image annotée {i+1}")
+
+    # ==============================
     # PDF
-pdf_path = export_pdf(
-    patient={
-        "nom": nom,
-        "prenom": prenom,
-        "camera": camera_pos,
-        "phase_cote": phase_cote
-    },
-    keyframe=key_img,
-    figures=figs,
-    table_data=table_data
-)
+    # ==============================
+    pdf_path = export_pdf(
+        patient={
+            "nom": nom,
+            "prenom": prenom,
+            "camera": camera_pos,
+            "phase_cote": phase_cote
+        },
+        keyframe=key_img,
+        figures=figs,
+        table_data=table_data,
+        annotated_images=annotated_images
+    )
 
-
-with open(pdf_path, "rb") as f:
-    st.download_button(
-        "📄 Télécharger le rapport PDF",
-        f,
-        file_name=f"GaitScan_{nom}_{prenom}.pdf",
-        mime="application/pdf"
-)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    with open(pdf_path, "rb") as f:
+        st.download_button(
+            "📄 Télécharger le rapport PDF",
+            f,
+            file_name=f"GaitScan_{nom}_{prenom}.pdf",
+            mime="application/pdf"
+        )
