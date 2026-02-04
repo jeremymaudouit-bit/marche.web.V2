@@ -283,6 +283,21 @@ if frame.ndim != 3 or frame.shape[2] != 3:
 # Conversion RGB (OBLIGATOIRE Cloud)
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+# Vérifier frame
+frame = frames[idx]
+
+if frame is None or not isinstance(frame, np.ndarray):
+    st.error(f"❌ Frame invalide à l’index {idx}")
+    st.stop()
+
+if frame.ndim != 3 or frame.shape[2] != 3:
+    st.error(f"❌ Frame non RGB : shape={frame.shape}")
+    st.stop()
+
+frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+st.image(frame_rgb, use_container_width=True)
+
+
 st.image(frame_rgb, use_container_width=True)
 
 
@@ -367,6 +382,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
