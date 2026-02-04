@@ -294,15 +294,15 @@ st.caption(
 
 
     # Détecter la phase selon le côté choisi
-  if phase_cote == "Droite":
+    if phase_cote == "Droite":
         heel_f_ref = bandpass(np.array(data["Cheville D"]), smooth)
         c0, c1 = detect_cycle(heel_f_ref)
         phase_colors = [(c0, c1, "blue")]
-  elif phase_cote == "Gauche":
+      elif phase_cote == "Gauche":
         heel_f_ref = bandpass(np.array(data["Cheville G"]), smooth)
         c0, c1 = detect_cycle(heel_f_ref)
         phase_colors = [(c0, c1, "orange")]
-  else:  # Les deux
+      else:  # Les deux
         heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
         heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
         c0_D, c1_D = detect_cycle(heel_f_D)
@@ -360,6 +360,7 @@ st.caption(
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
 
