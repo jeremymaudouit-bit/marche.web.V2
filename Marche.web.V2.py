@@ -293,24 +293,30 @@ st.caption(
     )
 
 
-    # Détecter la phase selon le côté choisi
+# ==============================
+# DÉTECTION PHASE ET KEYFRAME
+# ==============================
 if phase_cote == "Droite":
     heel_f_ref = bandpass(np.array(data["Cheville D"]), smooth)
     c0, c1 = detect_cycle(heel_f_ref)
     phase_colors = [(c0, c1, "blue")]
+
 elif phase_cote == "Gauche":
     heel_f_ref = bandpass(np.array(data["Cheville G"]), smooth)
     c0, c1 = detect_cycle(heel_f_ref)
     phase_colors = [(c0, c1, "orange")]
-else:  # Les deux
-     heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
-     heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
-     c0_D, c1_D = detect_cycle(heel_f_D)
-     c0_G, c1_G = detect_cycle(heel_f_G)
-     phase_colors = [(c0_D, c1_D, "blue"), (c0_G, c1_G, "orange")]
 
-    key_img = os.path.join(tempfile.gettempdir(),"keyframe.png")
-    cv2.imwrite(key_img, frames[len(frames)//2])
+else:  # Les deux
+    heel_f_D = bandpass(np.array(data["Cheville D"]), smooth)
+    heel_f_G = bandpass(np.array(data["Cheville G"]), smooth)
+    c0_D, c1_D = detect_cycle(heel_f_D)
+    c0_G, c1_G = detect_cycle(heel_f_G)
+    phase_colors = [(c0_D, c1_D, "blue"), (c0_G, c1_G, "orange")]
+
+# Création de la keyframe
+key_img = os.path.join(tempfile.gettempdir(), "keyframe.png")
+cv2.imwrite(key_img, frames[len(frames)//2])
+
 
     figs, table_data = {}, []
 
@@ -360,6 +366,7 @@ else:  # Les deux
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
 
