@@ -251,18 +251,40 @@ if video and st.button("▶ Lancer l'analyse"):
     # ==============================
     # VIDEO ANALYSÉE – SEGMENTS
     # ==============================
-    st.subheader("🎥 Vidéo analysée – segments mesurés")
+   # ==============================
+# VIDEO ANALYSÉE – SEGMENTS (SAFE)
+# ==============================
+st.subheader("🎥 Vidéo analysée – segments mesurés")
 
-    idx = st.slider(
-        "Frame analysée",
-        0, len(frames)-1, len(frames)//2
-    )
+# Sécurité absolue
+if not isinstance(frames, list) or len(frames) == 0:
+    st.error("❌ Aucune frame exploitable. Vidéo non lisible sur Streamlit Cloud.")
+    st.stop()
 
-    st.image(
-        frames[idx],
-        channels="BGR",
-        use_container_width=True
-    )
+idx = st.slider(
+    "Frame analysée",
+    min_value=0,
+    max_value=len(frames)-1,
+    value=len(frames)//2,
+    step=1
+)
+
+frame = frames[idx]
+
+# Vérification image OpenCV valide
+if not isinstance(frame, np.ndarray):
+    st.error("❌ Frame invalide (non numpy).")
+    st.stop()
+
+if frame.ndim != 3 or frame.shape[2] != 3:
+    st.error(f"❌ Format image invalide : {frame.shape}")
+    st.stop()
+
+# Conversion RGB (OBLIGATOIRE Cloud)
+frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+st.image(frame_rgb, use_container_width=True)
+
 
     st.caption(
         f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
@@ -338,4 +360,5 @@ if video and st.button("▶ Lancer l'analyse"):
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
