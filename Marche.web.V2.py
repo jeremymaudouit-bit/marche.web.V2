@@ -286,7 +286,7 @@ frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 st.image(frame_rgb, use_container_width=True)
 
 
-    st.caption(
+st.caption(
         f"Hanche D : {data['Hanche D'][idx]:.1f}° | "
         f"Genou D : {data['Genou D'][idx]:.1f}° | "
         f"Cheville D : {data['Cheville D'][idx]:.1f}°"
@@ -360,5 +360,6 @@ st.image(frame_rgb, use_container_width=True)
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
