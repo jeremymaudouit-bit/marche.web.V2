@@ -320,7 +320,7 @@ cv2.imwrite(key_img, frames[len(frames)//2])
 
 figs, table_data = {}, []
 
-    for joint in ["Hanche","Genou","Cheville"]:
+for joint in ["Hanche","Genou","Cheville"]:
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(12,4),gridspec_kw={"width_ratios":[2,1]})
         g = bandpass(np.array(data[f"{joint} G"]), smooth)
         d = bandpass(np.array(data[f"{joint} D"]), smooth)
@@ -366,6 +366,7 @@ figs, table_data = {}, []
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
 
