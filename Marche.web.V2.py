@@ -270,13 +270,13 @@ idx = st.slider(
 )
 
 
-# Vérifier qu'on a des frames
+# Vérifier que frames existe et contient des images
 if not frames or len(frames) == 0:
     st.error("❌ Aucune frame exploitable. Vidéo ou caméra non lisible.")
     st.stop()
 
-# On prend la première frame ou une frame choisie
-frame = frames[0]  # ou frames[idx] si tu as un index
+# On prend la première frame
+frame = frames[0]  # ou frames[idx] si tu veux un index spécifique
 
 # Vérifier que c'est un tableau numpy
 if frame is None or not isinstance(frame, np.ndarray):
@@ -284,15 +284,15 @@ if frame is None or not isinstance(frame, np.ndarray):
     st.stop()
 
 # Convertir en 3 canaux si nécessaire
-if frame.ndim == 2:
+if frame.ndim == 2:  # image grise
     frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-elif frame.ndim == 3 and frame.shape[2] == 4:
+elif frame.ndim == 3 and frame.shape[2] == 4:  # RGBA
     frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 elif frame.ndim != 3 or frame.shape[2] != 3:
     st.error(f"❌ Frame non compatible : shape={frame.shape}")
     st.stop()
 
-# Conversion BGR → RGB pour Streamlit
+# Conversion BGR -> RGB pour Streamlit
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 # Affichage sécurisé
@@ -381,6 +381,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
