@@ -269,42 +269,35 @@ idx = st.slider(
     step=1
 )
 
-frame = frames[idx]
 
-# Vérification image OpenCV valide
-if not isinstance(frame, np.ndarray):
-    st.error("❌ Frame invalide (non numpy).")
+# Vérifier qu'on a des frames
+if not frames or len(frames) == 0:
+    st.error("❌ Aucune frame exploitable. Vidéo ou caméra non lisible.")
     st.stop()
 
-if frame.ndim != 3 or frame.shape[2] != 3:
-    st.error(f"❌ Format image invalide : {frame.shape}")
-    st.stop()
+# On prend la première frame ou une frame choisie
+frame = frames[0]  # ou frames[idx] si tu as un index
 
-# Conversion RGB (OBLIGATOIRE Cloud)
-frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-# Récupération de la frame sélectionnée
-frame = frames[idx] if frames else None
-
-# Vérification que la frame est valide
+# Vérifier que c'est un tableau numpy
 if frame is None or not isinstance(frame, np.ndarray):
-    st.error(f"❌ Frame invalide à l’index {idx}. La vidéo ou la caméra n'a pas fourni de frame.")
+    st.error("❌ Frame invalide ou corrompue.")
     st.stop()
 
 # Convertir en 3 canaux si nécessaire
-if frame.ndim == 2:  # image grise
+if frame.ndim == 2:
     frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-elif frame.ndim == 3 and frame.shape[2] == 4:  # image RGBA
+elif frame.ndim == 3 and frame.shape[2] == 4:
     frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 elif frame.ndim != 3 or frame.shape[2] != 3:
     st.error(f"❌ Frame non compatible : shape={frame.shape}")
     st.stop()
 
-# Conversion BGR -> RGB pour Streamlit
+# Conversion BGR → RGB pour Streamlit
 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
 # Affichage sécurisé
 st.image(frame_rgb, use_container_width=True)
+
 
 
 st.caption(
@@ -388,6 +381,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
