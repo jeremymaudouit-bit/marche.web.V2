@@ -585,5 +585,4 @@ if video and st.button("▶ Lancer l'analyse"):
         mime="application/pdf"
     )
 
-    st.subheader("🖨️ Aperçu & Impression")
-    pdf_viewer_with_print(pdf_bytes, height=820)
+
