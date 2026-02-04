@@ -273,10 +273,36 @@ idx = st.slider(
 data, heel_y, frames = process_video(video_path)
 os.unlink(video_path)
 
-# Vérifier qu'on a des frames exploitables
+# ===============================
+# Récupération du fichier vidéo / caméra
+# ===============================
+if src == "Caméra":
+    if video is None:
+        st.stop()
+    # Camera input renvoie une image PNG (ou mp4 selon config)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    tmp.write(video.getbuffer())
+    tmp.close()
+    video_path = tmp.name
+else:  # Vidéo uploadée
+    if video is None:
+        st.stop()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    tmp.write(video.read())
+    tmp.close()
+    video_path = tmp.name
+
+# ===============================
+# Lecture sécurisée des frames
+# ===============================
+data, heel_y, frames = process_video(video_path)
+os.unlink(video_path)  # Supprimer le temporaire
+
+# Vérifier que frames contient bien des images
 if not frames or len(frames) == 0:
-    st.error("❌ Aucune frame exploitable. Vidéo ou caméra non lisible sur Streamlit Cloud.")
+    st.error("❌ Impossible de lire la vidéo ou le flux caméra.")
     st.stop()
+
 
 frame = frames[0]  # première frame
 
@@ -380,6 +406,7 @@ with open(pdf_path, "rb") as f:
         file_name=f"GaitScan_{nom}_{prenom}.pdf",
         mime="application/pdf"
 )
+
 
 
 
