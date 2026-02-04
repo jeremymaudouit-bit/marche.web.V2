@@ -318,7 +318,7 @@ key_img = os.path.join(tempfile.gettempdir(), "keyframe.png")
 cv2.imwrite(key_img, frames[len(frames)//2])
 
 
-    figs, table_data = {}, []
+figs, table_data = {}, []
 
     for joint in ["Hanche","Genou","Cheville"]:
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(12,4),gridspec_kw={"width_ratios":[2,1]})
@@ -366,6 +366,7 @@ cv2.imwrite(key_img, frames[len(frames)//2])
             file_name=f"GaitScan_{nom}_{prenom}.pdf",
             mime="application/pdf"
         )
+
 
 
 
