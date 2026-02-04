@@ -360,13 +360,14 @@ pdf_path = export_pdf(
 )
 
 
-    with open(pdf_path, "rb") as f:
-        st.download_button(
-            "📄 Télécharger le rapport PDF",
-            f,
-            file_name=f"GaitScan_{nom}_{prenom}.pdf",
-            mime="application/pdf"
-        )
+with open(pdf_path, "rb") as f:
+    st.download_button(
+        "📄 Télécharger le rapport PDF",
+        f,
+        file_name=f"GaitScan_{nom}_{prenom}.pdf",
+        mime="application/pdf"
+)
+
 
 
 
