@@ -163,13 +163,11 @@ def angle_hanche(e, h, g):
 def angle_genou(h, g, c):
     return 180 - angle(h, g, c)
 
-# angle cheville brut anatomique (pour image)
 def angle_cheville_brut(g, c, t, o):
     jambe = g - c
     pied = o - t
     return angle_between(jambe, pied)
 
-# angle cheville clinique centré sur 0 (neutre = 90°)
 def angle_cheville(g, c, t, o):
     return angle_cheville_brut(g, c, t, o) - 90.0
 
