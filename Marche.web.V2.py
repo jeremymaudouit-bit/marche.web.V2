@@ -50,11 +50,11 @@ pose = load_pose()
 def norm_curve(joint, n):
     x = np.linspace(0, 100, n)
     if joint == "Genou":
-        return np.interp(x, [0,15,40,60,80,100], [5,15,5,40,60,5])
+        return np.interp(x, [0, 15, 40, 60, 80, 100], [5, 15, 5, 40, 60, 5])
     if joint == "Hanche":
-        return np.interp(x, [0,30,60,100], [30,0,-10,30])
+        return np.interp(x, [0, 30, 60, 100], [30, 0, -10, 30])
     if joint == "Cheville":
-        return np.interp(x, [0,10,50,70,100], [5,10,25,10,5])
+        return np.interp(x, [0, 10, 50, 70, 100], [5, 10, 25, 10, 5])
     return np.zeros(n)
 
 def smooth_ma(y, win=7):
@@ -87,7 +87,7 @@ def remove_outliers_hampel(x, win=5, n_sigmas=3.0):
         return x
 
     y = x.copy()
-    k = 1.4826  # MAD -> sigma
+    k = 1.4826
 
     for i in range(n):
         i0 = max(0, i - win)
@@ -129,7 +129,7 @@ def detect_pose(frame):
         return np.array([p.x, p.y], dtype=np.float32), float(p.visibility)
 
     kp = {}
-    for side, suf in [("LEFT","G"),("RIGHT","D")]:
+    for side, suf in [("LEFT", "G"), ("RIGHT", "D")]:
         kp[f"Epaule {suf}"], kp[f"Epaule {suf} vis"] = pt(getattr(L, f"{side}_SHOULDER"))
         kp[f"Hanche {suf}"], kp[f"Hanche {suf} vis"] = pt(getattr(L, f"{side}_HIP"))
         kp[f"Genou {suf}"], kp[f"Genou {suf} vis"] = pt(getattr(L, f"{side}_KNEE"))
@@ -172,7 +172,7 @@ def angle_cheville(g, c, t, o):
     return angle_cheville_brut(g, c, t, o) - 90.0
 
 # ==============================
-# CYCLE + CONTACTS SOL
+# CONTACTS SOL + CYCLE
 # ==============================
 def detect_foot_contacts(y, fps=FPS):
     y = np.asarray(y, dtype=float)
@@ -218,8 +218,12 @@ def detect_cycle(y):
 # ==============================
 def process_video(path, conf):
     cap = cv2.VideoCapture(path)
-    res = {k: [] for k in ["Hanche G","Hanche D","Genou G","Genou D","Cheville G","Cheville D"]}
-    heelG, heelD = [], []
+    res = {k: [] for k in ["Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D"]}
+
+    heelG_y, heelD_y = [], []
+    heelG_x, heelD_x = [], []
+    toeG_x, toeD_x = [], []
+
     frames = []
 
     while cap.isOpened():
@@ -232,8 +236,12 @@ def process_video(path, conf):
         if kp is None:
             for k in res:
                 res[k].append(np.nan)
-            heelG.append(np.nan)
-            heelD.append(np.nan)
+            heelG_y.append(np.nan)
+            heelD_y.append(np.nan)
+            heelG_x.append(np.nan)
+            heelD_x.append(np.nan)
+            toeG_x.append(np.nan)
+            toeD_x.append(np.nan)
             continue
 
         def ok(n):
@@ -266,20 +274,26 @@ def process_video(path, conf):
             if (ok("Genou D") and ok("Cheville D") and ok("Talon D") and ok("Orteil D")) else np.nan
         )
 
-        heelG.append(float(kp["Talon G"][1]) if ok("Talon G") else np.nan)
-        heelD.append(float(kp["Talon D"][1]) if ok("Talon D") else np.nan)
+        heelG_y.append(float(kp["Talon G"][1]) if ok("Talon G") else np.nan)
+        heelD_y.append(float(kp["Talon D"][1]) if ok("Talon D") else np.nan)
+
+        heelG_x.append(float(kp["Talon G"][0]) if ok("Talon G") else np.nan)
+        heelD_x.append(float(kp["Talon D"][0]) if ok("Talon D") else np.nan)
+
+        toeG_x.append(float(kp["Orteil G"][0]) if ok("Orteil G") else np.nan)
+        toeD_x.append(float(kp["Orteil D"][0]) if ok("Orteil D") else np.nan)
 
     cap.release()
-    return res, heelG, heelD, frames
+    return res, heelG_y, heelD_y, heelG_x, heelD_x, toeG_x, toeD_x, frames
 
 # ==============================
 # ANNOTATION IMAGES
 # ==============================
-def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0,255,0)):
+def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0, 255, 0)):
     h, w = img_bgr.shape[:2]
-    A = (int(pA[0]*w), int(pA[1]*h))
-    B = (int(pB[0]*w), int(pB[1]*h))
-    C = (int(pC[0]*w), int(pC[1]*h))
+    A = (int(pA[0] * w), int(pA[1] * h))
+    B = (int(pB[0] * w), int(pB[1] * h))
+    C = (int(pC[0] * w), int(pC[1] * h))
 
     line_th = 4
     circle_r = 7
@@ -288,22 +302,22 @@ def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0,255,0)):
 
     cv2.line(img_bgr, A, B, color, line_th)
     cv2.line(img_bgr, C, B, color, line_th)
-    cv2.circle(img_bgr, B, circle_r, (0,0,255), -1)
+    cv2.circle(img_bgr, B, circle_r, (0, 0, 255), -1)
 
     label = f"{int(round(ang_deg))} deg"
     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_th)
     tx, ty = B[0] + 10, B[1] - 10
-    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0,0,0), -1)
+    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0, 0, 0), -1)
     cv2.putText(img_bgr, label, (tx, ty),
-                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255,255,255), text_th, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA)
 
-def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0,255,0)):
+def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0, 255, 0)):
     h, w = img_bgr.shape[:2]
 
-    K = (int(knee[0]*w), int(knee[1]*h))
-    A = (int(ankle[0]*w), int(ankle[1]*h))
-    H = (int(heel[0]*w), int(heel[1]*h))
-    T = (int(toe[0]*w), int(toe[1]*h))
+    K = (int(knee[0] * w), int(knee[1] * h))
+    A = (int(ankle[0] * w), int(ankle[1] * h))
+    H = (int(heel[0] * w), int(heel[1] * h))
+    T = (int(toe[0] * w), int(toe[1] * h))
 
     line_th = 4
     circle_r = 7
@@ -312,14 +326,14 @@ def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0
 
     cv2.line(img_bgr, K, A, color, line_th)
     cv2.line(img_bgr, H, T, color, line_th)
-    cv2.circle(img_bgr, A, circle_r, (0,0,255), -1)
+    cv2.circle(img_bgr, A, circle_r, (0, 0, 255), -1)
 
     label = f"{int(round(ang_deg))} deg"
     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_th)
     tx, ty = A[0] + 10, A[1] - 10
-    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0,0,0), -1)
+    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0, 0, 0), -1)
     cv2.putText(img_bgr, label, (tx, ty),
-                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255,255,255), text_th, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA)
 
 def annotate_frame(frame_bgr, kp, conf=0.30):
     if kp is None:
@@ -378,38 +392,49 @@ def asym_percent(left, right):
         return None
     return 100.0 * abs(right - left) / abs(denom)
 
-def compute_step_length_cm(heelG, heelD, taille_cm):
-    hG = nan_interp(heelG)
-    hD = nan_interp(heelD)
-    if hG is None or hD is None:
+def compute_step_length_cm(heelG_y, heelD_y, heelG_x, heelD_x, toeG_x, toeD_x, taille_cm):
+    """
+    Longueur du pas estimée en 2D :
+    - pas gauche = distance horizontale entre talon gauche à l'attaque
+      et avant-pied droit
+    - pas droit = distance horizontale entre talon droit à l'attaque
+      et avant-pied gauche
+    """
+
+    contactsG, _ = detect_foot_contacts(heelG_y, fps=FPS)
+    contactsD, _ = detect_foot_contacts(heelD_y, fps=FPS)
+
+    hGx = nan_interp(heelG_x)
+    hDx = nan_interp(heelD_x)
+    tGx = nan_interp(toeG_x)
+    tDx = nan_interp(toeD_x)
+
+    if hGx is None or hDx is None or tGx is None or tDx is None:
         return None, None, None, None, None
 
-    cG = detect_cycle(hG)
-    cD = detect_cycle(hD)
+    stepG_list = []
+    stepD_list = []
 
-    stepG_norm = None
-    stepD_norm = None
+    for i in contactsG:
+        if 0 <= i < len(hGx) and 0 <= i < len(tDx):
+            stepG_list.append(abs(hGx[i] - tDx[i]))
 
-    if cG:
-        i0, i1 = cG
-        stepG_norm = abs(hG[i1] - hD[i0])
+    for i in contactsD:
+        if 0 <= i < len(hDx) and 0 <= i < len(tGx):
+            stepD_list.append(abs(hDx[i] - tGx[i]))
 
-    if cD:
-        i0, i1 = cD
-        stepD_norm = abs(hD[i1] - hG[i0])
-
-    steps_norm = [v for v in [stepG_norm, stepD_norm] if v is not None]
-    if not steps_norm:
+    valid_norm = stepG_list + stepD_list
+    if len(valid_norm) == 0:
         return None, None, None, None, None
 
     scale = float(taille_cm) / 0.53
 
-    stepG_cm = stepG_norm * scale if stepG_norm is not None else None
-    stepD_cm = stepD_norm * scale if stepD_norm is not None else None
+    stepG_cm = float(np.mean(stepG_list) * scale) if len(stepG_list) > 0 else None
+    stepD_cm = float(np.mean(stepD_list) * scale) if len(stepD_list) > 0 else None
 
-    valid = [v for v in [stepG_cm, stepD_cm] if v is not None]
-    step_mean_cm = float(np.mean(valid))
-    step_std_cm = float(np.std(valid))
+    valid_cm = [v for v in [stepG_cm, stepD_cm] if v is not None]
+    step_mean_cm = float(np.mean(valid_cm))
+    step_std_cm = float(np.std(valid_cm))
     step_asym = asym_percent(stepG_cm, stepD_cm)
 
     return step_mean_cm, step_std_cm, stepG_cm, stepD_cm, step_asym
@@ -423,15 +448,15 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images,
 
     doc = SimpleDocTemplate(
         out_path, pagesize=A4,
-        leftMargin=1.7*cm, rightMargin=1.7*cm,
-        topMargin=1.7*cm, bottomMargin=1.7*cm
+        leftMargin=1.7 * cm, rightMargin=1.7 * cm,
+        topMargin=1.7 * cm, bottomMargin=1.7 * cm
     )
 
     styles = getSampleStyleSheet()
     story = []
 
     story.append(Paragraph("<b>GaitScan Pro – Analyse Cinématique</b>", styles["Title"]))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
 
     story.append(Paragraph(
         f"<b>Patient :</b> {patient['nom']} {patient['prenom']}<br/>"
@@ -442,7 +467,7 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images,
         f"<b>Taille :</b> {patient.get('taille_cm','N/A')} cm",
         styles["Normal"]
     ))
-    story.append(Spacer(1, 0.35*cm))
+    story.append(Spacer(1, 0.35 * cm))
 
     if step_info is not None:
         story.append(Paragraph("<b>Paramètres spatio-temporels (estimation)</b>", styles["Heading2"]))
@@ -456,7 +481,7 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images,
             + "<i>Mesure monocaméra 2D sans calibration métrique : valeurs estimées.</i>",
             styles["Normal"]
         ))
-        story.append(Spacer(1, 0.25*cm))
+        story.append(Spacer(1, 0.25 * cm))
 
     if temporal_info is not None:
         story.append(Paragraph("<b>Paramètres temporels</b>", styles["Heading2"]))
@@ -485,55 +510,55 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images,
         )
 
         story.append(Paragraph(txt, styles["Normal"]))
-        story.append(Spacer(1, 0.25*cm))
+        story.append(Spacer(1, 0.25 * cm))
 
     if contact_fig_path is not None and os.path.exists(contact_fig_path):
         story.append(Paragraph("<b>Contacts au sol (talons)</b>", styles["Heading2"]))
-        story.append(PDFImage(contact_fig_path, width=16*cm, height=6*cm))
-        story.append(Spacer(1, 0.3*cm))
+        story.append(PDFImage(contact_fig_path, width=16 * cm, height=6 * cm))
+        story.append(Spacer(1, 0.3 * cm))
 
     if asym_table:
         story.append(Paragraph("<b>Asymétries droite/gauche (angles)</b>", styles["Heading2"]))
         t = Table([["Mesure", "Moy G", "Moy D", "Asym %"]] + asym_table,
-                  colWidths=[6*cm, 3*cm, 3*cm, 3*cm])
+                  colWidths=[6 * cm, 3 * cm, 3 * cm, 3 * cm])
         t.setStyle(TableStyle([
-            ("GRID",(0,0),(-1,-1),0.7,colors.black),
-            ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-            ("ALIGN",(1,1),(-1,-1),"CENTER")
+            ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("ALIGN", (1, 1), (-1, -1), "CENTER")
         ]))
         story.append(t)
-        story.append(Spacer(1, 0.35*cm))
+        story.append(Spacer(1, 0.35 * cm))
 
     story.append(Paragraph("<b>Image clé</b>", styles["Heading2"]))
-    story.append(PDFImage(keyframe_path, width=16*cm, height=8*cm))
-    story.append(Spacer(1, 0.4*cm))
+    story.append(PDFImage(keyframe_path, width=16 * cm, height=8 * cm))
+    story.append(Spacer(1, 0.4 * cm))
 
     story.append(Paragraph("<b>Analyse articulaire</b>", styles["Heading2"]))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
     for joint, figpath in figures.items():
         story.append(Paragraph(f"<b>{joint}</b>", styles["Heading3"]))
-        story.append(PDFImage(figpath, width=16*cm, height=6*cm))
-        story.append(Spacer(1, 0.3*cm))
+        story.append(PDFImage(figpath, width=16 * cm, height=6 * cm))
+        story.append(Spacer(1, 0.3 * cm))
 
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
     story.append(Paragraph("<b>Synthèse (°)</b>", styles["Heading2"]))
 
     table = Table([["Mesure", "Min", "Moyenne", "Max"]] + table_data,
-                  colWidths=[7*cm, 3*cm, 3*cm, 3*cm])
+                  colWidths=[7 * cm, 3 * cm, 3 * cm, 3 * cm])
     table.setStyle(TableStyle([
-        ("GRID",(0,0),(-1,-1),0.7,colors.black),
-        ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-        ("ALIGN",(1,1),(-1,-1),"CENTER")
+        ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("ALIGN", (1, 1), (-1, -1), "CENTER")
     ]))
     story.append(table)
 
     if annotated_images:
         story.append(PageBreak())
         story.append(Paragraph("<b>Images annotées (angles)</b>", styles["Heading2"]))
-        story.append(Spacer(1, 0.2*cm))
+        story.append(Spacer(1, 0.2 * cm))
         for img in annotated_images:
-            story.append(PDFImage(img, width=16*cm, height=8*cm))
-            story.append(Spacer(1, 0.25*cm))
+            story.append(PDFImage(img, width=16 * cm, height=8 * cm))
+            story.append(Spacer(1, 0.25 * cm))
 
     doc.build(story)
     return out_path
@@ -559,16 +584,16 @@ def pdf_viewer_with_print(pdf_bytes: bytes, height=800):
       }}
     </script>
     """
-    components.html(html, height=height+80, scrolling=True)
+    components.html(html, height=height + 80, scrolling=True)
 
 # ==============================
 # UI
 # ==============================
 with st.sidebar:
-    nom = st.text_input("Nom","DURAND")
-    prenom = st.text_input("Prénom","Jean")
-    camera_pos = st.selectbox("Angle de film", ["Devant","Droite","Gauche"])
-    phase_cote = st.selectbox("Phases", ["Aucune","Droite","Gauche","Les deux"])
+    nom = st.text_input("Nom", "DURAND")
+    prenom = st.text_input("Prénom", "Jean")
+    camera_pos = st.selectbox("Angle de film", ["Devant", "Droite", "Gauche"])
+    phase_cote = st.selectbox("Phases", ["Aucune", "Droite", "Gauche", "Les deux"])
     smooth = st.slider("Lissage (patient)", 0, 10, 3)
     conf = st.slider("Seuil confiance", 0.1, 0.9, 0.3, 0.05)
 
@@ -580,7 +605,7 @@ with st.sidebar:
         help="Moyenne glissante (impair conseillé). 1 = pas de lissage."
     )
 
-video = st.file_uploader("Vidéo", ["mp4","avi","mov"])
+video = st.file_uploader("Vidéo", ["mp4", "avi", "mov"])
 
 # ==============================
 # ANALYSE
@@ -590,7 +615,7 @@ if video and st.button("▶ Lancer l'analyse"):
     tmp.write(video.read())
     tmp.close()
 
-    data, heelG, heelD, frames = process_video(tmp.name, conf)
+    data, heelG, heelD, heelG_x, heelD_x, toeG_x, toeD_x, frames = process_video(tmp.name, conf)
     os.unlink(tmp.name)
 
     contactsG, heelG_s = detect_foot_contacts(heelG, fps=FPS)
@@ -600,16 +625,18 @@ if video and st.button("▶ Lancer l'analyse"):
     step_times_D, step_time_D_mean, step_time_D_std = compute_step_times(contactsD, fps=FPS)
 
     phases = []
-    if phase_cote in ["Gauche","Les deux"]:
+    if phase_cote in ["Gauche", "Les deux"]:
         c = detect_cycle(heelG)
         if c:
             phases.append((*c, "orange"))
-    if phase_cote in ["Droite","Les deux"]:
+    if phase_cote in ["Droite", "Les deux"]:
         c = detect_cycle(heelD)
         if c:
             phases.append((*c, "blue"))
 
-    step_mean, step_std, stepG_cm, stepD_cm, step_asym = compute_step_length_cm(heelG, heelD, float(taille_cm))
+    step_mean, step_std, stepG_cm, stepD_cm, step_asym = compute_step_length_cm(
+        heelG, heelD, heelG_x, heelD_x, toeG_x, toeD_x, float(taille_cm)
+    )
 
     st.subheader("📏 Paramètres spatio-temporels")
     if step_mean is not None:
@@ -621,7 +648,7 @@ if video and st.button("▶ Lancer l'analyse"):
             st.write(f"**Asymétrie pas (G/D) :** {step_asym:.1f} %")
         st.caption("Estimation monocaméra 2D sans calibration métrique (échelle basée sur la taille).")
     else:
-        st.warning("Longueur de pas non calculable (talons insuffisamment détectés).")
+        st.warning("Longueur de pas non calculable.")
 
     st.subheader("⏱️ Temps du pas")
     col1, col2 = st.columns(2)
@@ -645,14 +672,14 @@ if video and st.button("▶ Lancer l'analyse"):
     st.caption("Les contacts au sol sont estimés à partir des minima verticaux des talons.")
 
     keyframe_path = os.path.join(tempfile.gettempdir(), "keyframe.png")
-    cv2.imwrite(keyframe_path, frames[len(frames)//2])
+    cv2.imwrite(keyframe_path, frames[len(frames) // 2])
 
     figures = {}
     table_data = []
     asym_rows = []
 
-    for joint in ["Hanche","Genou","Cheville"]:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios":[2,1]})
+    for joint in ["Hanche", "Genou", "Cheville"]:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1]})
 
         g_raw = np.array(data[f"{joint} G"], dtype=float)
         d_raw = np.array(data[f"{joint} D"], dtype=float)
@@ -697,10 +724,12 @@ if video and st.button("▶ Lancer l'analyse"):
 
         a = asym_percent(gmean_only, dmean_only)
         if a is None:
-            asym_rows.append([joint,
-                              f"{gmean_only:.1f}" if gmean_only is not None else "NA",
-                              f"{dmean_only:.1f}" if dmean_only is not None else "NA",
-                              "NA"])
+            asym_rows.append([
+                joint,
+                f"{gmean_only:.1f}" if gmean_only is not None else "NA",
+                f"{dmean_only:.1f}" if dmean_only is not None else "NA",
+                "NA"
+            ])
         else:
             asym_rows.append([joint, f"{gmean_only:.1f}", f"{dmean_only:.1f}", f"{a:.1f}"])
 
@@ -737,7 +766,7 @@ if video and st.button("▶ Lancer l'analyse"):
     st.subheader("📸 Captures annotées (angles)")
     num_photos = st.slider("Nombre d'images extraites", 1, 10, 3)
     total_frames = len(frames)
-    idxs = np.linspace(0, total_frames-1, num_photos, dtype=int)
+    idxs = np.linspace(0, total_frames - 1, num_photos, dtype=int)
 
     annotated_images = []
     for i, idx in enumerate(idxs):
