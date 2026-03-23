@@ -174,20 +174,46 @@ def angle_cheville(g, c, t, o):
     return angle_cheville_brut(g, c, t, o) - 90.0
 
 # ==============================
-# CYCLE
+# CYCLE + CONTACTS SOL
 # ==============================
-def detect_cycle(y):
-    y = np.array(y, dtype=float)
+def detect_foot_contacts(y, fps=FPS):
+    y = np.asarray(y, dtype=float)
+
     if np.isnan(y).any():
         idx = np.arange(len(y))
         ok = ~np.isnan(y)
         if ok.sum() >= 2:
             y = np.interp(idx, idx[ok], y[ok])
         else:
-            return None
-    inv = -y
-    p, _ = find_peaks(inv, distance=FPS//2, prominence=np.std(inv)*0.3)
-    return (int(p[0]), int(p[1])) if len(p) >= 2 else None
+            return np.array([], dtype=int), y
+
+    y_s = smooth_clinical(y, smooth_level=2)
+
+    inv = -y_s
+    min_distance = max(1, int(0.35 * fps))
+    prominence = max(1e-6, np.std(inv) * 0.2)
+
+    peaks, _ = find_peaks(inv, distance=min_distance, prominence=prominence)
+    return peaks, y_s
+
+def compute_step_times(contact_idx, fps=FPS):
+    contact_idx = np.asarray(contact_idx, dtype=int)
+    if len(contact_idx) < 2:
+        return [], None, None
+
+    step_times = np.diff(contact_idx) / float(fps)
+    return step_times.tolist(), float(np.mean(step_times)), float(np.std(step_times))
+
+def detect_cycle(y):
+    contacts, _ = detect_foot_contacts(y, fps=FPS)
+    if len(contacts) < 2:
+        return None
+
+    mid = len(contacts) // 2
+    if mid == 0:
+        return int(contacts[0]), int(contacts[1])
+
+    return int(contacts[mid - 1]), int(contacts[mid])
 
 # ==============================
 # VIDEO PROCESS
@@ -320,7 +346,6 @@ def annotate_frame(frame_bgr, kp, conf=0.30):
         draw_angle_on_frame(out, kp["Hanche D"], kp["Genou D"], kp["Cheville D"],
                             angle_genou(kp["Hanche D"], kp["Genou D"], kp["Cheville D"]))
 
-    # image = angle brut anatomique
     if ok("Genou G") and ok("Cheville G") and ok("Talon G") and ok("Orteil G"):
         draw_ankle_angle_on_frame(
             out,
@@ -394,7 +419,8 @@ def compute_step_length_cm(heelG, heelD, taille_cm):
 # ==============================
 # PDF EXPORT
 # ==============================
-def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, step_info=None, asym_table=None):
+def export_pdf(patient, keyframe_path, figures, table_data, annotated_images,
+               step_info=None, asym_table=None, temporal_info=None, contact_fig_path=None):
     out_path = os.path.join(tempfile.gettempdir(), f"GaitScan_{patient['nom']}_{patient['prenom']}.pdf")
 
     doc = SimpleDocTemplate(
@@ -433,6 +459,40 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, st
             styles["Normal"]
         ))
         story.append(Spacer(1, 0.25*cm))
+
+    if temporal_info is not None:
+        story.append(Paragraph("<b>Paramètres temporels</b>", styles["Heading2"]))
+        txt = ""
+
+        if temporal_info.get("G_mean") is not None:
+            txt += (
+                f"<b>Temps du pas Gauche :</b> {temporal_info['G_mean']:.2f} s "
+                f"(± {temporal_info['G_std']:.2f} s)<br/>"
+            )
+        else:
+            txt += "<b>Temps du pas Gauche :</b> non calculable<br/>"
+
+        if temporal_info.get("D_mean") is not None:
+            txt += (
+                f"<b>Temps du pas Droit :</b> {temporal_info['D_mean']:.2f} s "
+                f"(± {temporal_info['D_std']:.2f} s)<br/>"
+            )
+        else:
+            txt += "<b>Temps du pas Droit :</b> non calculable<br/>"
+
+        txt += (
+            f"<b>Contacts détectés :</b> Gauche = {temporal_info.get('nG', 0)} "
+            f"&nbsp;&nbsp; Droit = {temporal_info.get('nD', 0)}<br/>"
+            "<i>Les contacts au sol sont estimés à partir des minima verticaux des talons.</i>"
+        )
+
+        story.append(Paragraph(txt, styles["Normal"]))
+        story.append(Spacer(1, 0.25*cm))
+
+    if contact_fig_path is not None and os.path.exists(contact_fig_path):
+        story.append(Paragraph("<b>Contacts au sol (talons)</b>", styles["Heading2"]))
+        story.append(PDFImage(contact_fig_path, width=16*cm, height=6*cm))
+        story.append(Spacer(1, 0.3*cm))
 
     if asym_table:
         story.append(Paragraph("<b>Asymétries droite/gauche (angles)</b>", styles["Heading2"]))
@@ -535,6 +595,12 @@ if video and st.button("▶ Lancer l'analyse"):
     data, heelG, heelD, frames = process_video(tmp.name, conf)
     os.unlink(tmp.name)
 
+    contactsG, heelG_s = detect_foot_contacts(heelG, fps=FPS)
+    contactsD, heelD_s = detect_foot_contacts(heelD, fps=FPS)
+
+    step_times_G, step_time_G_mean, step_time_G_std = compute_step_times(contactsG, fps=FPS)
+    step_times_D, step_time_D_mean, step_time_D_std = compute_step_times(contactsD, fps=FPS)
+
     phases = []
     if phase_cote in ["Gauche","Les deux"]:
         c = detect_cycle(heelG)
@@ -559,6 +625,27 @@ if video and st.button("▶ Lancer l'analyse"):
     else:
         st.warning("Longueur de pas non calculable (talons insuffisamment détectés).")
 
+    st.subheader("⏱️ Temps du pas")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if step_time_G_mean is not None:
+            st.write(f"**Temps du pas Gauche :** {step_time_G_mean:.2f} s")
+            st.write(f"**Variabilité Gauche :** ± {step_time_G_std:.2f} s")
+            st.write(f"**Nombre de contacts Gauche :** {len(contactsG)}")
+        else:
+            st.write("**Temps du pas Gauche :** non calculable")
+
+    with col2:
+        if step_time_D_mean is not None:
+            st.write(f"**Temps du pas Droit :** {step_time_D_mean:.2f} s")
+            st.write(f"**Variabilité Droit :** ± {step_time_D_std:.2f} s")
+            st.write(f"**Nombre de contacts Droit :** {len(contactsD)}")
+        else:
+            st.write("**Temps du pas Droit :** non calculable")
+
+    st.caption("Les contacts au sol sont estimés à partir des minima verticaux des talons.")
+
     keyframe_path = os.path.join(tempfile.gettempdir(), "keyframe.png")
     cv2.imwrite(keyframe_path, frames[len(frames)//2])
 
@@ -572,7 +659,6 @@ if video and st.button("▶ Lancer l'analyse"):
         g_raw = np.array(data[f"{joint} G"], dtype=float)
         d_raw = np.array(data[f"{joint} D"], dtype=float)
 
-        # Lissage clinique fidèle aux amplitudes
         g = smooth_clinical(g_raw, smooth_level=smooth)
         d = smooth_clinical(d_raw, smooth_level=smooth)
 
@@ -624,6 +710,32 @@ if video and st.button("▶ Lancer l'analyse"):
     for row in asym_rows:
         st.write(f"**{row[0]}** — Moy G: {row[1]}° | Moy D: {row[2]}° | Asym: {row[3]}%")
 
+    st.subheader("🦶 Contacts au sol (talons)")
+    fig_contact, ax = plt.subplots(figsize=(12, 4))
+
+    x = np.arange(len(heelG_s)) / FPS
+    ax.plot(x, heelG_s, label="Talon Gauche", color="red")
+    ax.plot(x, heelD_s, label="Talon Droit", color="blue")
+
+    if len(contactsG) > 0:
+        ax.plot(contactsG / FPS, heelG_s[contactsG], "o", color="red")
+    for c in contactsG:
+        ax.axvline(c / FPS, color="red", alpha=0.15)
+
+    if len(contactsD) > 0:
+        ax.plot(contactsD / FPS, heelD_s[contactsD], "o", color="blue")
+    for c in contactsD:
+        ax.axvline(c / FPS, color="blue", alpha=0.15)
+
+    ax.set_title("Détection des contacts au sol")
+    ax.set_xlabel("Temps (s)")
+    ax.legend()
+    st.pyplot(fig_contact)
+
+    contact_fig_path = os.path.join(tempfile.gettempdir(), "contacts_sol.png")
+    fig_contact.savefig(contact_fig_path, bbox_inches="tight")
+    plt.close(fig_contact)
+
     st.subheader("📸 Captures annotées (angles)")
     num_photos = st.slider("Nombre d'images extraites", 1, 10, 3)
     total_frames = len(frames)
@@ -645,6 +757,15 @@ if video and st.button("▶ Lancer l'analyse"):
     if step_mean is not None:
         step_info = {"mean": step_mean, "std": step_std, "G": stepG_cm, "D": stepD_cm, "asym": step_asym}
 
+    temporal_info = {
+        "G_mean": step_time_G_mean,
+        "G_std": step_time_G_std,
+        "D_mean": step_time_D_mean,
+        "D_std": step_time_D_std,
+        "nG": len(contactsG),
+        "nD": len(contactsD),
+    }
+
     pdf_path = export_pdf(
         patient={
             "nom": nom,
@@ -659,7 +780,9 @@ if video and st.button("▶ Lancer l'analyse"):
         table_data=table_data,
         annotated_images=annotated_images,
         step_info=step_info,
-        asym_table=asym_rows
+        asym_table=asym_rows,
+        temporal_info=temporal_info,
+        contact_fig_path=contact_fig_path
     )
 
     with open(pdf_path, "rb") as f:
