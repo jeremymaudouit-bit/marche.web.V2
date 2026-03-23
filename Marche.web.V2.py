@@ -108,22 +108,34 @@ def angle(a, b, c):
     ba[1] *= -1
     bc[1] *= -1
     cosv = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-6)
-    return np.degrees(np.arccos(np.clip(cosv, -1, 1)))
+    return float(np.degrees(np.arccos(np.clip(cosv, -1, 1))))
 
-def angle_hanche(e,h,g): return 180 - angle(e,h,g)
-def angle_genou(h,g,c): return 180 - angle(h,g,c)
+def angle_between(v1, v2):
+    v1 = np.asarray(v1, dtype=float).copy()
+    v2 = np.asarray(v2, dtype=float).copy()
+    v1[1] *= -1
+    v2[1] *= -1
+    cosv = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-6)
+    return float(np.degrees(np.arccos(np.clip(cosv, -1, 1))))
+
+def angle_hanche(e, h, g):
+    return 180 - angle(e, h, g)
+
+def angle_genou(h, g, c):
+    return 180 - angle(h, g, c)
+
 def angle_cheville(g, c, t, o):
     jambe = g - c
     pied = o - t
-    return angle_between(jambe, pied)  # tibia–pied (genou-cheville-orteil)
+    return angle_between(jambe, pied)
 
 # ==============================
 # BANDPASS
 # ==============================
 def bandpass(sig, lvl, fs=FPS):
-    low = 0.3 + lvl*0.02
-    high = max(6.0 - lvl*0.25, low+0.4)
-    b,a = butter(2, [low/(fs/2), high/(fs/2)], btype="band")
+    low = 0.3 + lvl * 0.02
+    high = max(6.0 - lvl * 0.25, low + 0.4)
+    b, a = butter(2, [low / (fs / 2), high / (fs / 2)], btype="band")
     return filtfilt(b, a, sig)
 
 # ==============================
@@ -132,13 +144,14 @@ def bandpass(sig, lvl, fs=FPS):
 def detect_cycle(y):
     y = np.array(y, dtype=float)
     if np.isnan(y).any():
-        idx = np.arange(len(y)); ok = ~np.isnan(y)
+        idx = np.arange(len(y))
+        ok = ~np.isnan(y)
         if ok.sum() >= 2:
             y = np.interp(idx, idx[ok], y[ok])
         else:
             return None
     inv = -y
-    p,_ = find_peaks(inv, distance=FPS//2, prominence=np.std(inv)*0.3)
+    p, _ = find_peaks(inv, distance=FPS // 2, prominence=np.std(inv) * 0.3)
     return (int(p[0]), int(p[1])) if len(p) >= 2 else None
 
 # ==============================
@@ -146,22 +159,26 @@ def detect_cycle(y):
 # ==============================
 def process_video(path, conf):
     cap = cv2.VideoCapture(path)
-    res = {k:[] for k in ["Hanche G","Hanche D","Genou G","Genou D","Cheville G","Cheville D"]}
+    res = {k: [] for k in ["Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D"]}
     heelG, heelD = [], []
     frames = []
 
     while cap.isOpened():
         r, f = cap.read()
-        if not r: break
+        if not r:
+            break
         frames.append(f.copy())
 
         kp = detect_pose(f)
         if kp is None:
-            for k in res: res[k].append(np.nan)
-            heelG.append(np.nan); heelD.append(np.nan)
+            for k in res:
+                res[k].append(np.nan)
+            heelG.append(np.nan)
+            heelD.append(np.nan)
             continue
 
-        def ok(n): return kp.get(f"{n} vis", 0.0) >= conf
+        def ok(n):
+            return kp.get(f"{n} vis", 0.0) >= conf
 
         res["Hanche G"].append(
             angle_hanche(kp["Epaule G"], kp["Hanche G"], kp["Genou G"])
@@ -182,12 +199,12 @@ def process_video(path, conf):
         )
 
         res["Cheville G"].append(
-            angle_cheville(kp["Genou D"], kp["Cheville D"], kp["Talon D"], kp["Orteil D"])
-            if (ok("Genou G") and ok("Cheville G") and ok("Orteil G")) else np.nan
+            angle_cheville(kp["Genou G"], kp["Cheville G"], kp["Talon G"], kp["Orteil G"])
+            if (ok("Genou G") and ok("Cheville G") and ok("Talon G") and ok("Orteil G")) else np.nan
         )
         res["Cheville D"].append(
-            angle_cheville(kp["Genou D"], kp["Cheville D"], kp["Orteil D"])
-            if (ok("Genou D") and ok("Cheville D") and ok("Orteil D")) else np.nan
+            angle_cheville(kp["Genou D"], kp["Cheville D"], kp["Talon D"], kp["Orteil D"])
+            if (ok("Genou D") and ok("Cheville D") and ok("Talon D") and ok("Orteil D")) else np.nan
         )
 
         heelG.append(float(kp["Talon G"][1]) if ok("Talon G") else np.nan)
@@ -199,11 +216,11 @@ def process_video(path, conf):
 # ==============================
 # ANNOTATION IMAGES (angles + gros)
 # ==============================
-def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0,255,0)):
+def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0, 255, 0)):
     h, w = img_bgr.shape[:2]
-    A = (int(pA[0]*w), int(pA[1]*h))
-    B = (int(pB[0]*w), int(pB[1]*h))
-    C = (int(pC[0]*w), int(pC[1]*h))
+    A = (int(pA[0] * w), int(pA[1] * h))
+    B = (int(pB[0] * w), int(pB[1] * h))
+    C = (int(pC[0] * w), int(pC[1] * h))
 
     line_th = 4
     circle_r = 7
@@ -212,42 +229,91 @@ def draw_angle_on_frame(img_bgr, pA, pB, pC, ang_deg, color=(0,255,0)):
 
     cv2.line(img_bgr, A, B, color, line_th)
     cv2.line(img_bgr, C, B, color, line_th)
-    cv2.circle(img_bgr, B, circle_r, (0,0,255), -1)
+    cv2.circle(img_bgr, B, circle_r, (0, 0, 255), -1)
 
     label = f"{int(round(ang_deg))}°"
     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_th)
     tx, ty = B[0] + 10, B[1] - 10
-    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0,0,0), -1)
-    cv2.putText(img_bgr, label, (tx, ty),
-                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255,255,255), text_th, cv2.LINE_AA)
+    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0, 0, 0), -1)
+    cv2.putText(
+        img_bgr, label, (tx, ty),
+        cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA
+    )
+
+def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0, 255, 0)):
+    h, w = img_bgr.shape[:2]
+
+    K = (int(knee[0] * w), int(knee[1] * h))
+    A = (int(ankle[0] * w), int(ankle[1] * h))
+    H = (int(heel[0] * w), int(heel[1] * h))
+    T = (int(toe[0] * w), int(toe[1] * h))
+
+    line_th = 4
+    circle_r = 7
+    text_scale = 1.2
+    text_th = 3
+
+    # segment jambe
+    cv2.line(img_bgr, K, A, color, line_th)
+
+    # segment pied complet
+    cv2.line(img_bgr, H, T, color, line_th)
+
+    # point cheville
+    cv2.circle(img_bgr, A, circle_r, (0, 0, 255), -1)
+
+    label = f"{int(round(ang_deg))}°"
+    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_th)
+    tx, ty = A[0] + 10, A[1] - 10
+    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0, 0, 0), -1)
+    cv2.putText(
+        img_bgr, label, (tx, ty),
+        cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA
+    )
 
 def annotate_frame(frame_bgr, kp, conf=0.30):
     if kp is None:
         return frame_bgr
 
-    def ok(n): return kp.get(f"{n} vis", 0.0) >= conf
+    def ok(n):
+        return kp.get(f"{n} vis", 0.0) >= conf
+
     out = frame_bgr.copy()
 
     if ok("Epaule G") and ok("Hanche G") and ok("Genou G"):
-        draw_angle_on_frame(out, kp["Epaule G"], kp["Hanche G"], kp["Genou G"],
-                            angle_hanche(kp["Epaule G"], kp["Hanche G"], kp["Genou G"]))
+        draw_angle_on_frame(
+            out, kp["Epaule G"], kp["Hanche G"], kp["Genou G"],
+            angle_hanche(kp["Epaule G"], kp["Hanche G"], kp["Genou G"])
+        )
     if ok("Epaule D") and ok("Hanche D") and ok("Genou D"):
-        draw_angle_on_frame(out, kp["Epaule D"], kp["Hanche D"], kp["Genou D"],
-                            angle_hanche(kp["Epaule D"], kp["Hanche D"], kp["Genou D"]))
+        draw_angle_on_frame(
+            out, kp["Epaule D"], kp["Hanche D"], kp["Genou D"],
+            angle_hanche(kp["Epaule D"], kp["Hanche D"], kp["Genou D"])
+        )
 
     if ok("Hanche G") and ok("Genou G") and ok("Cheville G"):
-        draw_angle_on_frame(out, kp["Hanche G"], kp["Genou G"], kp["Cheville G"],
-                            angle_genou(kp["Hanche G"], kp["Genou G"], kp["Cheville G"]))
+        draw_angle_on_frame(
+            out, kp["Hanche G"], kp["Genou G"], kp["Cheville G"],
+            angle_genou(kp["Hanche G"], kp["Genou G"], kp["Cheville G"])
+        )
     if ok("Hanche D") and ok("Genou D") and ok("Cheville D"):
-        draw_angle_on_frame(out, kp["Hanche D"], kp["Genou D"], kp["Cheville D"],
-                            angle_genou(kp["Hanche D"], kp["Genou D"], kp["Cheville D"]))
+        draw_angle_on_frame(
+            out, kp["Hanche D"], kp["Genou D"], kp["Cheville D"],
+            angle_genou(kp["Hanche D"], kp["Genou D"], kp["Cheville D"])
+        )
 
-    if ok("Genou G") and ok("Cheville G") and ok("Orteil G"):
-        draw_angle_on_frame(out, kp["Genou G"], kp["Cheville G"], kp["Orteil G"],
-                            angle_cheville(kp["Genou G"], kp["Cheville G"], kp["Orteil G"]))
-    if ok("Genou D") and ok("Cheville D") and ok("Orteil D"):
-        draw_angle_on_frame(out, kp["Genou D"], kp["Cheville D"], kp["Orteil D"],
-                            angle_cheville(kp["Genou D"], kp["Cheville D"], kp["Orteil D"]))
+    if ok("Genou G") and ok("Cheville G") and ok("Talon G") and ok("Orteil G"):
+        draw_ankle_angle_on_frame(
+            out,
+            kp["Genou G"], kp["Cheville G"], kp["Talon G"], kp["Orteil G"],
+            angle_cheville(kp["Genou G"], kp["Cheville G"], kp["Talon G"], kp["Orteil G"])
+        )
+    if ok("Genou D") and ok("Cheville D") and ok("Talon D") and ok("Orteil D"):
+        draw_ankle_angle_on_frame(
+            out,
+            kp["Genou D"], kp["Cheville D"], kp["Talon D"], kp["Orteil D"],
+            angle_cheville(kp["Genou D"], kp["Cheville D"], kp["Talon D"], kp["Orteil D"])
+        )
 
     return out
 
@@ -320,15 +386,15 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, st
 
     doc = SimpleDocTemplate(
         out_path, pagesize=A4,
-        leftMargin=1.7*cm, rightMargin=1.7*cm,
-        topMargin=1.7*cm, bottomMargin=1.7*cm
+        leftMargin=1.7 * cm, rightMargin=1.7 * cm,
+        topMargin=1.7 * cm, bottomMargin=1.7 * cm
     )
 
     styles = getSampleStyleSheet()
     story = []
 
     story.append(Paragraph("<b>GaitScan Pro – Analyse Cinématique</b>", styles["Title"]))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
 
     story.append(Paragraph(
         f"<b>Patient :</b> {patient['nom']} {patient['prenom']}<br/>"
@@ -339,7 +405,7 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, st
         f"<b>Taille :</b> {patient.get('taille_cm','N/A')} cm",
         styles["Normal"]
     ))
-    story.append(Spacer(1, 0.35*cm))
+    story.append(Spacer(1, 0.35 * cm))
 
     if step_info is not None:
         story.append(Paragraph("<b>Paramètres spatio-temporels (estimation)</b>", styles["Heading2"]))
@@ -353,50 +419,50 @@ def export_pdf(patient, keyframe_path, figures, table_data, annotated_images, st
             + "<i>Mesure monocaméra 2D sans calibration métrique : valeurs estimées.</i>",
             styles["Normal"]
         ))
-        story.append(Spacer(1, 0.25*cm))
+        story.append(Spacer(1, 0.25 * cm))
 
     if asym_table:
         story.append(Paragraph("<b>Asymétries droite/gauche (angles)</b>", styles["Heading2"]))
         t = Table([["Mesure", "Moy G", "Moy D", "Asym %"]] + asym_table,
-                  colWidths=[6*cm, 3*cm, 3*cm, 3*cm])
+                  colWidths=[6 * cm, 3 * cm, 3 * cm, 3 * cm])
         t.setStyle(TableStyle([
-            ("GRID",(0,0),(-1,-1),0.7,colors.black),
-            ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-            ("ALIGN",(1,1),(-1,-1),"CENTER")
+            ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("ALIGN", (1, 1), (-1, -1), "CENTER")
         ]))
         story.append(t)
-        story.append(Spacer(1, 0.35*cm))
+        story.append(Spacer(1, 0.35 * cm))
 
     story.append(Paragraph("<b>Image clé</b>", styles["Heading2"]))
-    story.append(PDFImage(keyframe_path, width=16*cm, height=8*cm))
-    story.append(Spacer(1, 0.4*cm))
+    story.append(PDFImage(keyframe_path, width=16 * cm, height=8 * cm))
+    story.append(Spacer(1, 0.4 * cm))
 
     story.append(Paragraph("<b>Analyse articulaire</b>", styles["Heading2"]))
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
     for joint, figpath in figures.items():
         story.append(Paragraph(f"<b>{joint}</b>", styles["Heading3"]))
-        story.append(PDFImage(figpath, width=16*cm, height=6*cm))
-        story.append(Spacer(1, 0.3*cm))
+        story.append(PDFImage(figpath, width=16 * cm, height=6 * cm))
+        story.append(Spacer(1, 0.3 * cm))
 
-    story.append(Spacer(1, 0.2*cm))
+    story.append(Spacer(1, 0.2 * cm))
     story.append(Paragraph("<b>Synthèse (°)</b>", styles["Heading2"]))
 
     table = Table([["Mesure", "Min", "Moyenne", "Max"]] + table_data,
-                  colWidths=[7*cm, 3*cm, 3*cm, 3*cm])
+                  colWidths=[7 * cm, 3 * cm, 3 * cm, 3 * cm])
     table.setStyle(TableStyle([
-        ("GRID",(0,0),(-1,-1),0.7,colors.black),
-        ("BACKGROUND",(0,0),(-1,0),colors.lightgrey),
-        ("ALIGN",(1,1),(-1,-1),"CENTER")
+        ("GRID", (0, 0), (-1, -1), 0.7, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("ALIGN", (1, 1), (-1, -1), "CENTER")
     ]))
     story.append(table)
 
     if annotated_images:
         story.append(PageBreak())
         story.append(Paragraph("<b>Images annotées (angles)</b>", styles["Heading2"]))
-        story.append(Spacer(1, 0.2*cm))
+        story.append(Spacer(1, 0.2 * cm))
         for img in annotated_images:
-            story.append(PDFImage(img, width=16*cm, height=8*cm))
-            story.append(Spacer(1, 0.25*cm))
+            story.append(PDFImage(img, width=16 * cm, height=8 * cm))
+            story.append(Spacer(1, 0.25 * cm))
 
     doc.build(story)
     return out_path
@@ -422,45 +488,50 @@ def pdf_viewer_with_print(pdf_bytes: bytes, height=800):
       }}
     </script>
     """
-    components.html(html, height=height+80, scrolling=True)
+    components.html(html, height=height + 80, scrolling=True)
 
 # ==============================
 # UI
 # ==============================
 with st.sidebar:
-    nom = st.text_input("Nom","DURAND")
-    prenom = st.text_input("Prénom","Jean")
-    camera_pos = st.selectbox("Angle de film", ["Devant","Droite","Gauche"])
-    phase_cote = st.selectbox("Phases", ["Aucune","Droite","Gauche","Les deux"])
+    nom = st.text_input("Nom", "DURAND")
+    prenom = st.text_input("Prénom", "Jean")
+    camera_pos = st.selectbox("Angle de film", ["Devant", "Droite", "Gauche"])
+    phase_cote = st.selectbox("Phases", ["Aucune", "Droite", "Gauche", "Les deux"])
     smooth = st.slider("Lissage (patient)", 0, 10, 3)
     conf = st.slider("Seuil confiance", 0.1, 0.9, 0.3, 0.05)
 
-    # ✅ Ajouts demandés
     taille_cm = st.number_input("Taille du patient (cm)", min_value=80, max_value=230, value=170, step=1)
 
     show_norm = st.checkbox("Afficher la norme", value=True)
-    norm_smooth_win = st.slider("Lissage norme (simple)", 1, 21, 7, 2, help="Moyenne glissante (impair conseillé). 1 = pas de lissage.")
+    norm_smooth_win = st.slider(
+        "Lissage norme (simple)", 1, 21, 7, 2,
+        help="Moyenne glissante (impair conseillé). 1 = pas de lissage."
+    )
 
-video = st.file_uploader("Vidéo", ["mp4","avi","mov"])
+video = st.file_uploader("Vidéo", ["mp4", "avi", "mov"])
 
 # ==============================
 # ANALYSE
 # ==============================
 if video and st.button("▶ Lancer l'analyse"):
     tmp = tempfile.NamedTemporaryFile(delete=False)
-    tmp.write(video.read()); tmp.close()
+    tmp.write(video.read())
+    tmp.close()
 
     data, heelG, heelD, frames = process_video(tmp.name, conf)
     os.unlink(tmp.name)
 
     # Phases (double)
     phases = []
-    if phase_cote in ["Gauche","Les deux"]:
+    if phase_cote in ["Gauche", "Les deux"]:
         c = detect_cycle(heelG)
-        if c: phases.append((*c, "orange"))
-    if phase_cote in ["Droite","Les deux"]:
+        if c:
+            phases.append((*c, "orange"))
+    if phase_cote in ["Droite", "Les deux"]:
         c = detect_cycle(heelD)
-        if c: phases.append((*c, "blue"))
+        if c:
+            phases.append((*c, "blue"))
 
     # ==============================
     # LONGUEUR DE PAS (estimation)
@@ -481,15 +552,15 @@ if video and st.button("▶ Lancer l'analyse"):
 
     # keyframe (milieu)
     keyframe_path = os.path.join(tempfile.gettempdir(), "keyframe.png")
-    cv2.imwrite(keyframe_path, frames[len(frames)//2])
+    cv2.imwrite(keyframe_path, frames[len(frames) // 2])
 
     # Graphs + save figures for PDF
     figures = {}
     table_data = []
-    asym_rows = []  # pour PDF
+    asym_rows = []
 
-    for joint in ["Hanche","Genou","Cheville"]:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios":[2,1]})
+    for joint in ["Hanche", "Genou", "Cheville"]:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1]})
 
         g_raw = np.array(data[f"{joint} G"], dtype=float)
         d_raw = np.array(data[f"{joint} D"], dtype=float)
@@ -537,10 +608,12 @@ if video and st.button("▶ Lancer l'analyse"):
 
         a = asym_percent(gmean_only, dmean_only)
         if a is None:
-            asym_rows.append([joint,
-                              f"{gmean_only:.1f}" if gmean_only is not None else "NA",
-                              f"{dmean_only:.1f}" if dmean_only is not None else "NA",
-                              "NA"])
+            asym_rows.append([
+                joint,
+                f"{gmean_only:.1f}" if gmean_only is not None else "NA",
+                f"{dmean_only:.1f}" if dmean_only is not None else "NA",
+                "NA"
+            ])
         else:
             asym_rows.append([joint, f"{gmean_only:.1f}", f"{dmean_only:.1f}", f"{a:.1f}"])
 
@@ -555,12 +628,12 @@ if video and st.button("▶ Lancer l'analyse"):
     st.subheader("📸 Captures annotées (angles)")
     num_photos = st.slider("Nombre d'images extraites", 1, 10, 3)
     total_frames = len(frames)
-    idxs = np.linspace(0, total_frames-1, num_photos, dtype=int)
+    idxs = np.linspace(0, total_frames - 1, num_photos, dtype=int)
 
     annotated_images = []
     for i, idx in enumerate(idxs):
         frame = frames[idx]
-        kp = detect_pose(frame)  # recalcul uniquement pour ces frames
+        kp = detect_pose(frame)
         ann = annotate_frame(frame, kp, conf=conf)
 
         out_img = os.path.join(tempfile.gettempdir(), f"annotated_{i}.png")
