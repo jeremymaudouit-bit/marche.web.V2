@@ -4,4 +4,4 @@ matplotlib==3.8.4
 scipy==1.11.4
 reportlab==4.2.2
 mediapipe==0.10.14
-opencv-contrib-python-headless==4.8.1.78
+opencv-python-headless==4.10.0.84
