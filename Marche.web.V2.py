@@ -173,8 +173,13 @@ def angle_cheville_brut(g, c, t, o):
 def angle_cheville(g, c, t, o):
     return angle_cheville_brut(g, c, t, o) - 90.0
 
-def angle_tronc(epaule, hanche):
-    v = np.asarray(epaule, dtype=float) - np.asarray(hanche, dtype=float)
+def midpoint(p1, p2):
+    return (np.asarray(p1, dtype=float) + np.asarray(p2, dtype=float)) / 2.0
+
+def angle_tronc(epaule_g, epaule_d, hanche_g, hanche_d):
+    ep_mid = midpoint(epaule_g, epaule_d)
+    ha_mid = midpoint(hanche_g, hanche_d)
+    v = ep_mid - ha_mid
     v[1] *= -1
     return float(np.degrees(np.arctan2(v[0], v[1] + 1e-6)))
 
@@ -225,7 +230,7 @@ def detect_cycle(y):
 # ==============================
 def process_video(path, conf):
     cap = cv2.VideoCapture(path)
-    res = {k: [] for k in ["Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D", "Tronc G", "Tronc D"]}
+    res = {k: [] for k in ["Tronc", "Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D"]}
 
     heelG_y, heelD_y = [], []
     heelG_x, heelD_x = [], []
@@ -254,6 +259,11 @@ def process_video(path, conf):
         def ok(n):
             return kp.get(f"{n} vis", 0.0) >= conf
 
+        res["Tronc"].append(
+            angle_tronc(kp["Epaule G"], kp["Epaule D"], kp["Hanche G"], kp["Hanche D"])
+            if (ok("Epaule G") and ok("Epaule D") and ok("Hanche G") and ok("Hanche D")) else np.nan
+        )
+
         res["Hanche G"].append(
             angle_hanche(kp["Epaule G"], kp["Hanche G"], kp["Genou G"])
             if (ok("Epaule G") and ok("Hanche G") and ok("Genou G")) else np.nan
@@ -261,15 +271,6 @@ def process_video(path, conf):
         res["Hanche D"].append(
             angle_hanche(kp["Epaule D"], kp["Hanche D"], kp["Genou D"])
             if (ok("Epaule D") and ok("Hanche D") and ok("Genou D")) else np.nan
-        )
-
-        res["Tronc G"].append(
-            angle_tronc(kp["Epaule G"], kp["Hanche G"])
-            if (ok("Epaule G") and ok("Hanche G")) else np.nan
-        )
-        res["Tronc D"].append(
-            angle_tronc(kp["Epaule D"], kp["Hanche D"])
-            if (ok("Epaule D") and ok("Hanche D")) else np.nan
         )
 
         res["Genou G"].append(
@@ -351,11 +352,11 @@ def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0
     cv2.putText(img_bgr, label, (tx, ty),
                 cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA)
 
-def draw_trunk_angle_on_frame(img_bgr, shoulder, hip, ang_deg, color=(255, 165, 0)):
+def draw_trunk_angle_on_frame(img_bgr, shoulder_mid, hip_mid, ang_deg, color=(255, 165, 0)):
     h, w = img_bgr.shape[:2]
 
-    S = (int(shoulder[0] * w), int(shoulder[1] * h))
-    H = (int(hip[0] * w), int(hip[1] * h))
+    S = (int(shoulder_mid[0] * w), int(shoulder_mid[1] * h))
+    H = (int(hip_mid[0] * w), int(hip_mid[1] * h))
 
     ref_len = int(0.18 * h)
     V = (H[0], H[1] - ref_len)
@@ -385,19 +386,14 @@ def annotate_frame(frame_bgr, kp, conf=0.30):
 
     out = frame_bgr.copy()
 
-    if ok("Epaule G") and ok("Hanche G"):
+    if ok("Epaule G") and ok("Epaule D") and ok("Hanche G") and ok("Hanche D"):
+        shoulder_mid = midpoint(kp["Epaule G"], kp["Epaule D"])
+        hip_mid = midpoint(kp["Hanche G"], kp["Hanche D"])
         draw_trunk_angle_on_frame(
             out,
-            kp["Epaule G"],
-            kp["Hanche G"],
-            angle_tronc(kp["Epaule G"], kp["Hanche G"])
-        )
-    if ok("Epaule D") and ok("Hanche D"):
-        draw_trunk_angle_on_frame(
-            out,
-            kp["Epaule D"],
-            kp["Hanche D"],
-            angle_tronc(kp["Epaule D"], kp["Hanche D"])
+            shoulder_mid,
+            hip_mid,
+            angle_tronc(kp["Epaule G"], kp["Epaule D"], kp["Hanche G"], kp["Hanche D"])
         )
 
     if ok("Epaule G") and ok("Hanche G") and ok("Genou G"):
@@ -734,7 +730,44 @@ if video and st.button("▶ Lancer l'analyse"):
     table_data = []
     asym_rows = []
 
-    for joint in ["Tronc", "Hanche", "Genou", "Cheville"]:
+    # ----- TRONC (une seule courbe) -----
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1]})
+
+    trunk_raw = np.array(data["Tronc"], dtype=float)
+    trunk = smooth_clinical(trunk_raw, smooth_level=smooth)
+
+    ax1.plot(trunk, label="Tronc", color="darkorange")
+    for c0, c1, col in phases:
+        ax1.axvspan(c0, c1, color=col, alpha=0.3)
+    ax1.set_title("Tronc – Analyse")
+    ax1.legend()
+
+    if show_norm:
+        norm = norm_curve("Tronc", len(trunk))
+        norm = smooth_ma(norm, win=norm_smooth_win)
+        ax2.plot(norm, color="green")
+        ax2.set_title("Norme (lissée)" if norm_smooth_win and norm_smooth_win > 1 else "Norme")
+    else:
+        ax2.axis("off")
+
+    st.pyplot(fig)
+
+    fig_path = os.path.join(tempfile.gettempdir(), "Tronc_plot.png")
+    fig.savefig(fig_path, bbox_inches="tight")
+    plt.close(fig)
+    figures["Tronc"] = fig_path
+
+    mask = ~np.isnan(trunk_raw)
+    if mask.sum() == 0:
+        tmin, tmean, tmax = np.nan, np.nan, np.nan
+    else:
+        vals = trunk[mask]
+        tmin, tmean, tmax = float(np.min(vals)), float(np.mean(vals)), float(np.max(vals))
+
+    table_data.append(["Tronc", f"{tmin:.1f}", f"{tmean:.1f}", f"{tmax:.1f}"])
+
+    # ----- ARTICULATIONS droite/gauche -----
+    for joint in ["Hanche", "Genou", "Cheville"]:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1]})
 
         g_raw = np.array(data[f"{joint} G"], dtype=float)
