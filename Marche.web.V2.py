@@ -55,6 +55,8 @@ def norm_curve(joint, n):
         return np.interp(x, [0, 30, 60, 100], [30, 0, -10, 30])
     if joint == "Cheville":
         return np.interp(x, [0, 10, 50, 70, 100], [5, 10, 25, 10, 5])
+    if joint == "Tronc":
+        return np.zeros(n)
     return np.zeros(n)
 
 def smooth_ma(y, win=7):
@@ -171,6 +173,11 @@ def angle_cheville_brut(g, c, t, o):
 def angle_cheville(g, c, t, o):
     return angle_cheville_brut(g, c, t, o) - 90.0
 
+def angle_tronc(epaule, hanche):
+    v = np.asarray(epaule, dtype=float) - np.asarray(hanche, dtype=float)
+    v[1] *= -1
+    return float(np.degrees(np.arctan2(v[0], v[1] + 1e-6)))
+
 # ==============================
 # CONTACTS SOL + CYCLE
 # ==============================
@@ -218,7 +225,7 @@ def detect_cycle(y):
 # ==============================
 def process_video(path, conf):
     cap = cv2.VideoCapture(path)
-    res = {k: [] for k in ["Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D"]}
+    res = {k: [] for k in ["Hanche G", "Hanche D", "Genou G", "Genou D", "Cheville G", "Cheville D", "Tronc G", "Tronc D"]}
 
     heelG_y, heelD_y = [], []
     heelG_x, heelD_x = [], []
@@ -254,6 +261,15 @@ def process_video(path, conf):
         res["Hanche D"].append(
             angle_hanche(kp["Epaule D"], kp["Hanche D"], kp["Genou D"])
             if (ok("Epaule D") and ok("Hanche D") and ok("Genou D")) else np.nan
+        )
+
+        res["Tronc G"].append(
+            angle_tronc(kp["Epaule G"], kp["Hanche G"])
+            if (ok("Epaule G") and ok("Hanche G")) else np.nan
+        )
+        res["Tronc D"].append(
+            angle_tronc(kp["Epaule D"], kp["Hanche D"])
+            if (ok("Epaule D") and ok("Hanche D")) else np.nan
         )
 
         res["Genou G"].append(
@@ -335,6 +351,31 @@ def draw_ankle_angle_on_frame(img_bgr, knee, ankle, heel, toe, ang_deg, color=(0
     cv2.putText(img_bgr, label, (tx, ty),
                 cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA)
 
+def draw_trunk_angle_on_frame(img_bgr, shoulder, hip, ang_deg, color=(255, 165, 0)):
+    h, w = img_bgr.shape[:2]
+
+    S = (int(shoulder[0] * w), int(shoulder[1] * h))
+    H = (int(hip[0] * w), int(hip[1] * h))
+
+    ref_len = int(0.18 * h)
+    V = (H[0], H[1] - ref_len)
+
+    line_th = 4
+    circle_r = 7
+    text_scale = 1.0
+    text_th = 3
+
+    cv2.line(img_bgr, H, S, color, line_th)
+    cv2.line(img_bgr, H, V, (200, 200, 200), 2)
+    cv2.circle(img_bgr, H, circle_r, (0, 0, 255), -1)
+
+    label = f"Tronc {ang_deg:+.1f} deg"
+    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, text_scale, text_th)
+    tx, ty = H[0] + 10, H[1] + 30
+    cv2.rectangle(img_bgr, (tx - 4, ty - th - 6), (tx + tw + 6, ty + 6), (0, 0, 0), -1)
+    cv2.putText(img_bgr, label, (tx, ty),
+                cv2.FONT_HERSHEY_SIMPLEX, text_scale, (255, 255, 255), text_th, cv2.LINE_AA)
+
 def annotate_frame(frame_bgr, kp, conf=0.30):
     if kp is None:
         return frame_bgr
@@ -343,6 +384,21 @@ def annotate_frame(frame_bgr, kp, conf=0.30):
         return kp.get(f"{n} vis", 0.0) >= conf
 
     out = frame_bgr.copy()
+
+    if ok("Epaule G") and ok("Hanche G"):
+        draw_trunk_angle_on_frame(
+            out,
+            kp["Epaule G"],
+            kp["Hanche G"],
+            angle_tronc(kp["Epaule G"], kp["Hanche G"])
+        )
+    if ok("Epaule D") and ok("Hanche D"):
+        draw_trunk_angle_on_frame(
+            out,
+            kp["Epaule D"],
+            kp["Hanche D"],
+            angle_tronc(kp["Epaule D"], kp["Hanche D"])
+        )
 
     if ok("Epaule G") and ok("Hanche G") and ok("Genou G"):
         draw_angle_on_frame(out, kp["Epaule G"], kp["Hanche G"], kp["Genou G"],
@@ -678,7 +734,7 @@ if video and st.button("▶ Lancer l'analyse"):
     table_data = []
     asym_rows = []
 
-    for joint in ["Hanche", "Genou", "Cheville"]:
+    for joint in ["Tronc", "Hanche", "Genou", "Cheville"]:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw={"width_ratios": [2, 1]})
 
         g_raw = np.array(data[f"{joint} G"], dtype=float)
