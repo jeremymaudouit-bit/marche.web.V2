@@ -1,5 +1,5 @@
 streamlit==1.37.1
-numpy==1.26.4
+numpy==1.25.2
 matplotlib==3.8.4
 scipy==1.11.4
 reportlab==4.2.2
