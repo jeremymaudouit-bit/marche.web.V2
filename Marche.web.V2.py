@@ -32,16 +32,16 @@ FPS = 30
 # ==============================
 mp_pose = mp.solutions.pose
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_pose():
-    return mp_pose.Pose(
+    import mediapipe as mp
+    return mp.solutions.pose.Pose(
         static_image_mode=False,
         model_complexity=1,
         smooth_landmarks=True,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     )
-
 pose = load_pose()
 
 # ==============================
