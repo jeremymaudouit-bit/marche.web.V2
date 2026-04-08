@@ -1,20 +1,7 @@
-# Streamlit et interface
-streamlit==1.26.0
-
-# OpenCV sans interface graphique (évite libgthread / GTK)
-opencv-python-headless==4.7.0.72
-
-# Mediapipe pour la détection de pose
-mediapipe==0.10.12
-
-# Librairies scientifiques
-numpy==1.25.0
-
-# Librairies de rendu et markdown
-rich==14.3.3
-pygments==2.20.0
-markdown-it-py==4.0.0
-mdurl==0.1.2
-
-# Librairies systèmes utiles (optionnel si tu utilises tempfile, os, base64)
-# généralement présentes par défaut, donc pas besoin explicite
+streamlit
+mediapipe
+opencv-python-headless
+numpy
+scipy
+matplotlib
+reportlab
