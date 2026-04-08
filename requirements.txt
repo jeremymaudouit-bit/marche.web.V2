@@ -1,8 +1,5 @@
 streamlit
 opencv-python-headless
-mediapipe
+mediapipe>=0.10,<1
 numpy<2
-scipy
-matplotlib
-reportlab
 protobuf<4
