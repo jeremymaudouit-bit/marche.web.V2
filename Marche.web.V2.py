@@ -1,11 +1,7 @@
 # ==============================
 # IMPORTS
 # ==============================
-import sys
-print(sys.version)
 
-import cv2
-print("CV2 OK", cv2.__version__)
 import streamlit as st
 import cv2, os, tempfile, base64
 import numpy as np
