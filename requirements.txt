@@ -1,8 +1,8 @@
-streamlit==1.33.0
-opencv-python-headless==4.9.0.80
-mediapipe==0.10.14
-numpy==1.26.4
-scipy==1.11.4
-matplotlib==3.8.2
-reportlab==4.0.9
+streamlit==1.32.0
+opencv-python-headless==4.8.1.78
+mediapipe==0.10.9
+numpy==1.24.4
+scipy==1.10.1
+matplotlib==3.7.1
+reportlab==4.0.4
 protobuf==3.20.3
